@@ -1,0 +1,150 @@
+{
+    "curriculum_cases": [
+        {
+            "description": "Retrieve Information About Lessons in a Topic",
+            "prompt": "What are the lessons in the topic 'Maths Skills For Scientists'?",
+            "exclude_types": ["KeyStage", "KeyStageSyllabus", "YearGroup", "YearGroupSyllabus"],
+            "include_types": ["Topic", "Lesson", "LESSON_INCLUDES_LEARNING_STATEMENT"]
+        },
+        {
+            "description": "Retrieve Information About a Specific Year Group Syllabus",
+            "prompt": "What is the syllabus for Year 8?",
+            "exclude_types": ["KeyStage", "KeyStageSyllabus", "Topic", "Lesson", "LearningStatement"],
+            "include_types": ["YearGroup", "YearGroupSyllabus", "YEAR_SYLLABUS_INCLUDES_TOPIC"]
+        },
+        {
+            "description": "Retrieve Key Stages and Their Syllabuses",
+            "prompt": "What are the key stages and their syllabuses?",
+            "exclude_types": ["YearGroup", "YearGroupSyllabus", "Topic", "Lesson", "LearningStatement"],
+            "include_types": ["KeyStage", "KeyStageSyllabus", "KEY_STAGE_INCLUDES_KEY_STAGE_SYLLABUS"]
+        },
+        {
+            "description": "Retrieve Topics Within a Specific Year Group Syllabus",
+            "prompt": "What are the topics in the Year 8 Science syllabus?",
+            "exclude_types": ["KeyStage", "KeyStageSyllabus", "Lesson", "LearningStatement"],
+            "include_types": ["YearGroup", "YearGroupSyllabus", "Topic", "YEAR_SYLLABUS_INCLUDES_TOPIC"]
+        },
+        {
+            "description": "Retrieve All Learning Statements for a Specific Lesson",
+            "prompt": "What are the learning statements for the lesson '8P6.R'?",
+            "exclude_types": ["KeyStage", "KeyStageSyllabus", "YearGroup", "YearGroupSyllabus", "Topic"],
+            "include_types": ["Lesson", "LearningStatement", "LESSON_INCLUDES_LEARNING_STATEMENT"]
+        },
+        {
+            "description": "General Information Retrieval Without Exclusions",
+            "prompt": "Give me an overview of the school curriculum.",
+            "exclude_types": [],
+            "include_types": []
+        },
+        {
+            "description": "Retrieve Detailed Information About a Specific Node Type",
+            "prompt": "Give me detailed information about all topics.",
+            "exclude_types": [],
+            "include_types": ["Topic"]
+        },
+        {
+            "description": "Retrieve Relationships Between Specific Node Types",
+            "prompt": "What are the relationships between Year Groups and their syllabuses?",
+            "exclude_types": [],
+            "include_types": ["YearGroup", "YearGroupSyllabus", "KEY_STAGE_SYLLABUS_INCLUDES_YEAR_GROUP_SYLLABUS"]
+        }
+    ],
+    "include_exclude_cases": {
+        "includes": [
+            {
+                "description": "Include only Lessons",
+                "prompt": "What are the lessons in the topic 'Maths Skills For Scientists'?",
+                "exclude_types": [],
+                "include_types": ["Lesson"]
+            },
+            {
+                "description": "Include only Topics",
+                "prompt": "What are the topics in the Year 8 Science syllabus?",
+                "exclude_types": [],
+                "include_types": ["Topic"]
+            },
+            {
+                "description": "Include only Year Groups",
+                "prompt": "What are the year groups in the school curriculum?",
+                "exclude_types": [],
+                "include_types": ["YearGroup"]
+            },
+            {
+                "description": "Include only Learning Statements",
+                "prompt": "What are the learning statements for the lesson '8P6.R'?",
+                "exclude_types": [],
+                "include_types": ["LearningStatement"]
+            },
+            {
+                "description": "Include only Key Stages",
+                "prompt": "What are the key stages in the school curriculum?",
+                "exclude_types": [],
+                "include_types": ["KeyStage"]
+            }
+        ],
+        "excludes": [
+            {
+                "description": "Exclude Lessons",
+                "prompt": "What are the lessons in the topic 'Maths Skills For Scientists'?",
+                "exclude_types": ["Lesson"],
+                "include_types": []
+            },
+            {
+                "description": "Exclude Topics",
+                "prompt": "What are the topics in the Year 8 Science syllabus?",
+                "exclude_types": ["Topic"],
+                "include_types": []
+            },
+            {
+                "description": "Exclude Year Groups",
+                "prompt": "What are the year groups in the school curriculum?",
+                "exclude_types": ["YearGroup"],
+                "include_types": []
+            },
+            {
+                "description": "Exclude Learning Statements",
+                "prompt": "What are the learning statements for the lesson '8P6.R'?",
+                "exclude_types": ["LearningStatement"],
+                "include_types": []
+            },
+            {
+                "description": "Exclude Key Stages",
+                "prompt": "What are the key stages in the school curriculum?",
+                "exclude_types": ["KeyStage"],
+                "include_types": []
+            }
+        ],
+        "includes_excludes": [
+            {
+                "description": "Include Lessons, Exclude Topics",
+                "prompt": "What are the lessons in the topic 'Maths Skills For Scientists'?",
+                "exclude_types": ["Topic"],
+                "include_types": ["Lesson"]
+            },
+            {
+                "description": "Include Topics, Exclude Lessons",
+                "prompt": "What are the topics in the Year 8 Science syllabus?",
+                "exclude_types": ["Lesson"],
+                "include_types": ["Topic"]
+            },
+            {
+                "description": "Include Year Groups, Exclude Key Stages",
+                "prompt": "What are the year groups in the school curriculum?",
+                "exclude_types": ["KeyStage"],
+                "include_types": ["YearGroup"]
+            },
+            {
+                "description": "Include Learning Statements, Exclude Lessons",
+                "prompt": "What are the learning statements for the lesson '8P6.R'?",
+                "exclude_types": ["Lesson"],
+                "include_types": ["LearningStatement"]
+            },
+            {
+                "description": "Include Key Stages, Exclude Year Groups",
+                "prompt": "What are the key stages in the school curriculum?",
+                "exclude_types": ["YearGroup"],
+                "include_types": ["KeyStage"]
+            }
+        ]
+    }
+}

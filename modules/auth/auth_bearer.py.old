@@ -1,0 +1,74 @@
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+import os
+import modules.logger_tool as logger
+from fastapi import Request, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from firebase_admin import auth
+import time
+
+log_name = 'api_modules_auth_auth_bearer'
+log_dir = os.getenv("LOG_PATH", "/logs")  # Default path as fallback
+logging = logger.get_logger(
+    name=log_name,
+    log_level=os.getenv("LOG_LEVEL", "DEBUG"),
+    log_path=log_dir,
+    log_file=log_name,
+    runtime=True,
+    log_format='default'
+)
+
+class JWTBearer(HTTPBearer):
+    def __init__(self, auto_error: bool = True):
+        super(JWTBearer, self).__init__(auto_error=auto_error)
+
+    async def __call__(self, request: Request):
+        credentials: HTTPAuthorizationCredentials = await super(JWTBearer, self).__call__(request)
+        if credentials:
+            if not credentials.scheme == "Bearer":
+                raise HTTPException(status_code=403, detail="Invalid authentication scheme.")
+            if not self.verify_jwt(credentials.credentials):
+                raise HTTPException(status_code=403, detail="Invalid token or expired token.")
+            return credentials.credentials
+        else:
+            raise HTTPException(status_code=403, detail="Invalid authorization code.")
+
+    def verify_jwt(self, jwtoken: str) -> bool:
+        try:
+            logging.info(f"Verifying JWT: {jwtoken}")
+            # Add a 60-second clock skew tolerance
+            decoded_token = auth.verify_id_token(jwtoken, check_revoked=True, clock_skew_seconds=60)
+            logging.info(f"Decoded JWT: {decoded_token}")
+            return True
+        except auth.RevokedIdTokenError:
+            logging.error("Token has been revoked")
+            return False
+        except auth.ExpiredIdTokenError:
+            logging.error("Token has expired")
+            return False
+        except auth.InvalidIdTokenError:
+            logging.error("Token is invalid")
+            return False
+        except Exception as e:
+            logging.error(f"JWT verification failed: {str(e)}")
+            return False
+
+def decodeJWT(token: str) -> dict:
+    try:
+        logging.info(f"Decoding JWT: {token}")
+        # Add a 60-second clock skew tolerance
+        decoded_token = auth.verify_id_token(token, check_revoked=True, clock_skew_seconds=60)
+        logging.info(f"Decoded JWT: {decoded_token}")
+        return decoded_token
+    except auth.RevokedIdTokenError:
+        logging.error("Token has been revoked")
+        return None
+    except auth.ExpiredIdTokenError:
+        logging.error("Token has expired")
+        return None
+    except auth.InvalidIdTokenError:
+        logging.error("Token is invalid")
+        return None
+    except Exception as e:
+        logging.error(f"JWT decoding failed: {str(e)}")
+        return None

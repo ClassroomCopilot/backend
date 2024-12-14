@@ -1,0 +1,65 @@
+# FastAPI and Server
+fastapi
+supabase
+uvicorn
+python-dotenv
+python-multipart
+python-jose
+pyjwt
+
+# Neo4j and Databases
+neo4j
+psycopg
+psycopg-pool
+
+# Redis
+redis
+
+# Data Processing and Analysis
+#pydantic
+pandas
+scipy
+requests
+openpyxl
+beautifulsoup4
+html2text
+
+# OpenAI and related tools
+openai
+ollama
+neontology
+
+# Providers
+msal
+
+# Templates and Rendering
+jinja2
+
+# Testing
+pytest
+pytest-html
+
+# Miscellaneous
+emoji
+extruct
+w3lib
+scikit-learn
+
+# Google APIs
+youtube-transcript-api
+google-api-python-client
+google-auth-oauthlib
+
+# LangChain Ecosystem
+#langchain[all]
+langchain[llms]
+langchain-community
+#langchain-cli
+#langchain-core
+langchain-openai
+#langchain-text-splitters
+#langchainhub
+#langchainplus-sdk
+langgraph
+#langgraph-checkpoint
+#langgraph-checkpoint-postgres

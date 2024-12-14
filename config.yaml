@@ -1,0 +1,14 @@
+databases:
+  initial_databases:
+    - "cc.ukschools"
+    - "cc.users"
+    - "pytests.devusers"
+    - "pytests.schools"
+
+school:
+  kevlarai:
+    school_uuid: "kevlarai"
+    school_name: "KevlarAI High School"
+    school_website: "www.kevlarai.edu"
+    timetable_file: "kevlarai_data/kevlarai_timetable.xlsx"
+    curriculum_file: "kevlarai_data/kevlarai_curriculum.xlsx"
