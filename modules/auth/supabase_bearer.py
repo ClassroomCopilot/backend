@@ -1,6 +1,6 @@
 import os
 from modules.logger_tool import initialise_logger
-logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("BACKEND_LOG_PATH"), 'default', True)
+logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
 
 from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

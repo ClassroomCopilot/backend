@@ -1,5 +1,5 @@
 FROM python:latest
-WORKDIR /app
+WORKDIR /app/backend
 
 COPY requirements.txt .
 
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 # Copy the entire project
 COPY . .
 
-EXPOSE ${VITE_FASTAPI_PORT}
+EXPOSE ${PORT_BACKEND}
 
 # Ensure commands run inside the virtual environment
 CMD ["/bin/bash", "-c", "source /opt/venv/bin/activate && python main.py"]

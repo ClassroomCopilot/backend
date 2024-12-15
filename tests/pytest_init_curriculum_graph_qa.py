@@ -57,7 +57,7 @@ def test_include_exclude_cases(case, config):
 
 def run_test_case(case, config):
     logging.info(f"Starting test case with prompt: {case['prompt']}")
-    url = f"http://{os.environ['VITE_FASTAPI_HOST']}:{os.environ['VITE_FASTAPI_PORT']}/api/langchain/graph_qa/prompt"
+    url = f"http://{os.environ['HOST_BACKEND']}:{os.environ['PORT_BACKEND']}/api/langchain/graph_qa/prompt"
     params = {
         "database": config["database"],
         "prompt": case["prompt"],

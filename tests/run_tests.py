@@ -41,7 +41,7 @@ def load_env():
     project_root = find_project_root()
     dotenv_path = find_dotenv(os.path.join(project_root, '.env'))
     load_dotenv(dotenv_path)
-    required_vars = ["VITE_FASTAPI_HOST", "VITE_FASTAPI_PORT", "USERPROFILE", "APP_DIR", "EXCEL_CURRICULUM_FILE", "EXCEL_TIMETABLE_FILE"]
+    required_vars = ["HOST_BACKEND", "PORT_BACKEND", "USERPROFILE", "APP_DIR", "EXCEL_CURRICULUM_FILE", "EXCEL_TIMETABLE_FILE"]
     for var in required_vars:
         if var not in os.environ:
             print(f"Error: {var} is not set in the environment.")

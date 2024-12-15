@@ -14,7 +14,7 @@ logging = logger.get_logger(
 )
 
 def test_query_graph(database, prompt, top_k=20, model="gpt-4o", temperature=0, verbose=False, return_intermediate_steps=True, exclude_types=None, include_types=None, return_direct=False, validate_cypher=False, model_type="openai"):
-    url = f"http://{os.environ['VITE_FASTAPI_HOST']}:{os.environ['VITE_FASTAPI_PORT']}/langchain/graph_qa/prompt"
+    url = f"http://{os.environ['HOST_BACKEND']}:{os.environ['PORT_BACKEND']}/langchain/graph_qa/prompt"
     params = {
         "database": database,
         "prompt": prompt,

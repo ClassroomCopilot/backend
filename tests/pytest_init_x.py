@@ -267,7 +267,7 @@ def test_create_kcar_user_and_upload_timetable(created_school):
     logging.success("KCar user created successfully")
     kcar_user = UserNode(**response.json()["data"]["user_node"])
 
-    user_timetable_file = os.environ['VITE_KCAR_TIMETABLE_URL']
+    user_timetable_file = os.environ['KCAR_TIMETABLE_URL']
     logging.info(f"User timetable file: {user_timetable_file}")
     with open(user_timetable_file, "rb") as f:
         logging.info(f"Uploading teacher timetable for K Car: {user_timetable_file}")

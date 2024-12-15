@@ -4,7 +4,7 @@ import pytest
 import json
 
 # Define the base URL and the tokens
-base_url = f"http://{os.environ.get('VITE_FASTAPI_HOST')}:{os.environ.get('VITE_FASTAPI_PORT')}/arbor/data"
+base_url = f"http://{os.environ.get('HOST_BACKEND')}:{os.environ.get('PORT_BACKEND')}/arbor/data"
 tokens = {
     1: os.getenv("KS3_COURSE_CLASS_MEMBERSHIP_AUTH"),
     2: os.getenv("TEACHING_GROUP_MEMBERSHIPS_2023_2024_AUTH"),

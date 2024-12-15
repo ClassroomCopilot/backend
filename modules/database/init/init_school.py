@@ -1,6 +1,6 @@
 import os
 from modules.logger_tool import initialise_logger
-logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("BACKEND_LOG_PATH"), 'default', True)
+logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
 import modules.database.schemas.entity_neo as entity_neo
 import modules.database.init.init_school_timetable as init_school_timetable
 import modules.database.tools.neontology_tools as neon

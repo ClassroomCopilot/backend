@@ -27,7 +27,7 @@ def get_cors_origins():
     return [
         f"http://{os.getenv('HOST_FRONTEND')}:{os.getenv('PORT_FRONTEND')}",
         f"http://{os.getenv('HOST_NEO4J')}:{os.getenv('PORT_NEO4J_HTTP')}",
-        f"https://{os.getenv('SITE_URL')}",
+        f"{os.getenv('CORS_SITE_URL')}",
     ]
 
 def setup_cors(app: FastAPI) -> None:

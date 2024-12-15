@@ -168,7 +168,7 @@ def get_loggers():
     return [logging.getLogger(name) for name in logging.Logger.manager.loggerDict]
 
 # Initialize logger using provided settings
-def initialise_logger(log_name='cc_backend', log_level=None, log_dir=None, log_format='default', runtime=True):
+def initialise_logger(log_name='backend', log_level=None, log_dir=None, log_format='default', runtime=True):
     log_level = log_level or os.getenv("LOG_LEVEL", "DEBUG")
     log_dir = log_dir or os.getenv("LOG_PATH", "/logs")
     return get_logger(name=log_name, log_level=log_level, log_path=log_dir, log_file=log_name, runtime=runtime, log_format=log_format)

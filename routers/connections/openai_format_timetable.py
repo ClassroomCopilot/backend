@@ -4,7 +4,7 @@ import json
 import requests
 
 def format_timetable_with_openai(timetable_data):
-    url = f"http://{os.environ.get('VITE_FASTAPI_HOST')}:{os.environ.get('VITE_FASTAPI_PORT')}/llm/public/openai/openai_general_prompt"
+    url = f"http://{os.environ.get('HOST_BACKEND')}:{os.environ.get('PORT_BACKEND')}/llm/public/openai/openai_general_prompt"
     headers = {"Content-Type": "application/json"}
     prompt = (
         "Create a markdown formatted table of the following timetable data. "
