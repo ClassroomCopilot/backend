@@ -25,9 +25,9 @@ dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
 def get_cors_origins():
     """Get CORS origins based on environment configuration"""
     return [
+        "*",
         f"http://{os.getenv('HOST_FRONTEND')}:{os.getenv('PORT_FRONTEND')}",
         f"http://{os.getenv('HOST_NEO4J')}:{os.getenv('PORT_NEO4J_HTTP')}",
-        f"{os.getenv('CORS_SITE_URL')}",
     ]
 
 def setup_cors(app: FastAPI) -> None:
