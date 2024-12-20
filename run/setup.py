@@ -26,6 +26,7 @@ def get_cors_origins():
     """Get CORS origins based on environment configuration"""
     return [
         "*",
+        "http://localhost:3000",
         f"http://{os.getenv('HOST_FRONTEND')}:{os.getenv('PORT_FRONTEND')}",
         f"http://{os.getenv('HOST_NEO4J')}:{os.getenv('PORT_NEO4J_HTTP')}",
     ]
@@ -47,17 +48,18 @@ def setup_cors(app: FastAPI) -> None:
 
 def initialize_application():
     """Initialize all application components if INIT_RUN is True and set INIT_RUN to False"""
-    if os.getenv("INIT_RUN", "false").lower() == "true":
-        logger.debug("Starting application initialization")
-        try:
-            initialize_databases()
-            create_tldraw_multiplayer_filesystem()
-            logger.warning("Setting INIT_RUN to false in current environment only. Manual modification of the .env file required to persist this change.")
-            os.environ["INIT_RUN"] = "false"
-            logger.success("Application initialization completed successfully")
-        except Exception as e:
-            logger.error(f"Error during application initialization: {str(e)}")
-            raise
+    if os.getenv("INIT_RUN", "false").lower() != "true":
+        return
+    logger.debug("Starting application initialization")
+    try:
+        initialize_databases()
+        create_tldraw_multiplayer_filesystem()
+        logger.warning("Setting INIT_RUN to false in current environment only. Manual modification of the .env file required to persist this change.")
+        os.environ["INIT_RUN"] = "false"
+        logger.success("Application initialization completed successfully")
+    except Exception as e:
+        logger.error(f"Error during application initialization: {str(e)}")
+        raise
 
 def initialize_databases():
     """Initialize the databases"""
