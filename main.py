@@ -4,11 +4,10 @@ logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH
 from fastapi import FastAPI
 import uvicorn
 
-from run.setup import setup_cors, initialize_application
+from run.setup import setup_cors
 from run.routers import register_routes
 
 # FastAPI App Setup
-initialize_application()
 app = FastAPI()
 setup_cors(app)
 register_routes(app)
