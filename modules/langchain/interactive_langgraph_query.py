@@ -426,14 +426,14 @@ class PerplexityClone:
             if not apiUrl:
                 raise ValueError("SEARXNG_API_URL_DEV is not set in the environment variables")
 
-            use_cache = os.getenv("VITE_DEV", "true").lower() == "false"
+            use_cache = os.getenv("DEV_MODE", "true").lower() == "false"
 
             async with aiohttp.ClientSession() as session:
                 results = []
                 for query in queries:
                     logging.debug(f"Searching for query: {query}")
 
-                    # Check cache for existing results only if VITE_DEV is false
+                    # Check cache for existing results only if DEV_MODE is false
                     if use_cache:
                         cache_key = f"searxng_search:{query}"
                         cached_result = get_cached_results(cache_key)
@@ -464,7 +464,7 @@ class PerplexityClone:
                             
                             results.append(search_results)
                             
-                            # Cache the result only if VITE_DEV is false
+                            # Cache the result only if DEV_MODE is false
                             if use_cache:
                                 set_cached_results(cache_key, search_results)
                             

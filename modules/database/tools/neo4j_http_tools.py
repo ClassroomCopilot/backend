@@ -15,7 +15,7 @@ logging = logger.get_logger(
 import requests
 import base64
 
-vite_dev = os.getenv('VITE_DEV', 'false')
+dev_mode = os.getenv('DEV_MODE', 'false')
 
 def send_query(query, encoded_credentials=None, params=None, method='POST', database="system", endpoint="/tx/commit"):
     if encoded_credentials is None:
@@ -25,8 +25,8 @@ def send_query(query, encoded_credentials=None, params=None, method='POST', data
         logging.debug(f"Encoded credentials: {encoded_credentials}")
     
     # Use HTTPS for production, HTTP for development
-    protocol = 'http' if vite_dev else 'https' # TODO: Is SSL required for the Neo4j database?
-    neo4j_url = f"{os.getenv('HOST_NEO4J')}:{os.getenv('PORT_NEO4J_HTTP')}" if vite_dev else f"{os.getenv('VITE_PUBLIC_NEO4J')}"
+    protocol = 'http' if dev_mode else 'https' # TODO: Is SSL required for the Neo4j database?
+    neo4j_url = f"{os.getenv('HOST_NEO4J')}:{os.getenv('PORT_NEO4J_HTTP')}" if dev_mode else f"{os.getenv('VITE_PUBLIC_NEO4J')}"
     url = f"{protocol}://{neo4j_url}/db/{database}{endpoint}"
     logging.debug(f"URL: {url}")
     headers = {'Content-Type': 'application/json', 'Authorization': f'Basic {encoded_credentials}'}

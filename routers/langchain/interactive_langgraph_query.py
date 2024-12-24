@@ -41,8 +41,8 @@ async def interactive_query(request: QueryRequest):
             "messages": [HumanMessage(content=request.query)],
         }
         
-        # Check cache for existing results only if VITE_DEV is false
-        use_cache = os.getenv("VITE_DEV", "true").lower() == "false"
+        # Check cache for existing results only if DEV_MODE is false
+        use_cache = os.getenv("DEV_MODE", "true").lower() == "false"
         if use_cache:
             cache_key = f"langgraph_query:{request.query}"
             cached_result = get_cached_results(cache_key)
@@ -64,7 +64,7 @@ async def interactive_query(request: QueryRequest):
         
         response = QueryResponse(response=final_response, needs_more_info=needs_more_info)
         
-        # Cache the result only if VITE_DEV is false
+        # Cache the result only if DEV_MODE is false
         if use_cache:
             set_cached_results(cache_key, response.dict())
         
