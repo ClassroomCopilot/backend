@@ -17,8 +17,5 @@ def format_user_email_for_neo_db(user_email):
     sanitized = sanitized.replace('.', 'dot')
     sanitized = sanitized.replace('_', 'underscore')
     sanitized = sanitized.replace('-', 'dash')
-    
-    # Add prefix
-    formatted = f"{sanitized}"
-        
-    return formatted
+
+    return f"{sanitized}"
