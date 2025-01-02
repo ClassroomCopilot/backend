@@ -64,9 +64,7 @@ class ClassroomCopilotFilesystem:
         return False
 
     def sanitize_username(self, username):
-        # Replace spaces and special characters with underscores
-        sanitized = re.sub(r'[^\w\-_\.]', '_', username)
-        return sanitized
+        return re.sub(r'[^\w\-_\.]', '_', username)
 
     def create_user_directory(self, username, user_type=None, school_path=None):
         """Create a directory for a specific user."""
@@ -110,66 +108,64 @@ class ClassroomCopilotFilesystem:
         """Create a directory for a specific year."""
         if calendar_path is None:
             year_path = os.path.join(self.root_path, "calendar", str(year))
-            return self.create_directory(year_path), year_path
         else:
             year_path = os.path.join(calendar_path, "years", str(year))
-            return self.create_directory(year_path), year_path
+
+        return self.create_directory(year_path), year_path
 
     def create_month_directory(self, year, month, calendar_path=None):
         """Create a directory for a specific month."""
         if calendar_path is None:
             month_path = os.path.join(self.root_path, "calendar", str(year), "months", f"{month:02}")
-            return self.create_directory(month_path), month_path
         else:
             month_path = os.path.join(calendar_path, "years", str(year), "months", f"{month:02}")
-            return self.create_directory(month_path), month_path
+
+        return self.create_directory(month_path), month_path
 
     def create_week_directory(self, year, week, calendar_path=None):
         """Create a directory for a specific week."""
         if calendar_path is None:
             week_path = os.path.join(self.root_path, "calendar", str(year), "weeks", f"{week}")
-            return self.create_directory(week_path), week_path
         else:
             week_path = os.path.join(calendar_path, "years", str(year), "weeks", f"{week}")
-            return self.create_directory(week_path), week_path
+
+        return self.create_directory(week_path), week_path
 
     def create_day_directory(self, year, month, day, calendar_path=None):
         """Create a directory for a specific day."""
         if calendar_path is None:
             day_path = os.path.join(self.root_path, "calendar", str(year), "months", f"{month:02}", f"{day:02}")
-            return self.create_directory(day_path), day_path
         else:
             day_path = os.path.join(calendar_path, "years", str(year), "months", f"{month:02}", f"{day:02}")
-            return self.create_directory(day_path), day_path
+
+        return self.create_directory(day_path), day_path
 
     def setup_calendar_directories(self, start_date, end_date, calendar_path=None):
         """Setup directories for the range from start_date to end_date."""
         current_date = start_date
         while current_date <= end_date:
+            year, month, day = current_date.year, current_date.month, current_date.day
             if calendar_path is None:
-                year, month, day = current_date.year, current_date.month, current_date.day
                 _, year_path = self.create_year_directory(year)
                 _, month_path = self.create_month_directory(year, month)
                 _, week_path = self.create_week_directory(year, current_date.isocalendar()[1])
                 _, day_path = self.create_day_directory(year, month, day)
-                current_date += timedelta(days=1)
             else:
-                year, month, day = current_date.year, current_date.month, current_date.day
                 _, year_path = self.create_year_directory(year, calendar_path)
                 _, month_path = self.create_month_directory(year, month, calendar_path)
                 _, week_path = self.create_week_directory(year, current_date.isocalendar()[1], calendar_path)
                 _, day_path = self.create_day_directory(year, month, day, calendar_path)
-                current_date += timedelta(days=1)
+            current_date += timedelta(days=1)
         return year_path, month_path, week_path, day_path
 
     def create_school_timetable_directory(self, school_path=None):
         """Create a directory for the timetable."""
         if school_path is None:
             timetable_path = os.path.join(self.root_path, "timetable")
-            return self.create_directory(timetable_path), timetable_path
         else:
             timetable_path = os.path.join(school_path, "timetable")
-            return self.create_directory(timetable_path), timetable_path
+
+        return self.create_directory(timetable_path), timetable_path
 
     def create_school_timetable_year_directory(self, timetable_path, year):
         """Create a directory for a specific academic year within the timetable."""
@@ -205,19 +201,19 @@ class ClassroomCopilotFilesystem:
         """Create a directory for the curriculum."""
         if school_path is None:
             curriculum_path = os.path.join(self.root_path, "curriculum")
-            return self.create_directory(curriculum_path), curriculum_path
         else:
             curriculum_path = os.path.join(school_path, "curriculum")
-            return self.create_directory(curriculum_path), curriculum_path
+
+        return self.create_directory(curriculum_path), curriculum_path
     
     def create_school_pastoral_directory(self, school_path=None):
         """Create a directory for the pastoral."""
         if school_path is None:
             pastoral_path = os.path.join(self.root_path, "pastoral")
-            return self.create_directory(pastoral_path), pastoral_path
         else:
             pastoral_path = os.path.join(school_path, "pastoral")
-            return self.create_directory(pastoral_path), pastoral_path
+
+        return self.create_directory(pastoral_path), pastoral_path
         
     def create_school_curriculum_key_stage_directory(self, curriculum_path, key_stage):
         """Create a directory for a specific key stage within the curriculum."""
@@ -270,106 +266,6 @@ class ClassroomCopilotFilesystem:
         planned_lesson_path = os.path.join(class_path, "planned_lessons", lesson_id)
         return self.create_directory(planned_lesson_path), planned_lesson_path
     
-    def initialise_tldraw_file_system(self):
-        logging.info(f"Initialising tldraw file system at {self.root_path}")
-        tldraw_content = {
-            "document": {
-                "store": {
-                    "document:document": {
-                        "gridSize": 10,
-                        "name": "",
-                        "meta": {},
-                        "id": "document:document",
-                        "typeName": "document"
-                    },
-                    "page:page": {
-                        "meta": {},
-                        "id": "page:page",
-                        "name": "Page 1",
-                        "index": "a1",
-                        "typeName": "page"
-                    },
-                    "shape:transcriptionText-1": {
-                        "x": 20,
-                        "y": 40,
-                        "rotation": 0,
-                        "isLocked": False,
-                        "opacity": 1,
-                        "meta": {},
-                        "id": "shape:transcriptionText-1",
-                        "type": "transcriptionText",
-                        "props": {
-                            "text": "Sample text",
-                            "w": 1000,
-                            "h": 30,
-                            "sentenceId": "1",
-                            "isComplete": True
-                        },
-                        "parentId": "page:page",
-                        "index": "a2",
-                        "typeName": "shape"
-                    }
-                    # Add more shapes as needed
-                },
-                "schema": {
-                    "schemaVersion": 2,
-                    "sequences": {
-                        "com.tldraw.store": 4,
-                        "com.tldraw.asset": 1,
-                        "com.tldraw.camera": 1,
-                        "com.tldraw.document": 2,
-                        "com.tldraw.instance": 25,
-                        "com.tldraw.instance_page_state": 5,
-                        "com.tldraw.page": 1,
-                        "com.tldraw.instance_presence": 5,
-                        "com.tldraw.pointer": 1,
-                        "com.tldraw.shape": 4,
-                        "com.tldraw.asset.bookmark": 2,
-                        "com.tldraw.asset.image": 5,
-                        "com.tldraw.asset.video": 5,
-                        "com.tldraw.shape.group": 0,
-                        "com.tldraw.shape.text": 2,
-                        "com.tldraw.shape.bookmark": 2,
-                        "com.tldraw.shape.draw": 2,
-                        "com.tldraw.shape.geo": 9,
-                        "com.tldraw.shape.note": 7,
-                        "com.tldraw.shape.line": 5,
-                        "com.tldraw.shape.frame": 0,
-                        "com.tldraw.shape.arrow": 5,
-                        "com.tldraw.shape.highlight": 1,
-                        "com.tldraw.shape.embed": 4,
-                        "com.tldraw.shape.image": 4,
-                        "com.tldraw.shape.video": 2,
-                        "com.tldraw.shape.microphone": 1,
-                        "com.tldraw.shape.transcriptionText": 0,
-                        "com.tldraw.binding.arrow": 0
-                    }
-                }
-            },
-            "session": {
-                "version": 0,
-                "currentPageId": "page:page",
-                "exportBackground": True,
-                "isFocusMode": False,
-                "isDebugMode": False,
-                "isToolLocked": False,
-                "isGridMode": False,
-                "pageStates": [{
-                    "pageId": "page:page",
-                    "camera": {"x": 0, "y": 0, "z": 1},
-                    "selectedShapeIds": [],
-                    "focusedGroupId": None
-                }]
-            }
-        }
-        multiplayer_tldraw_path = os.path.join(self.root_path, "multiplayer")
-        self.create_directory(multiplayer_tldraw_path)
-        logging.info(f"Created tldraw directory for multiplayer at {multiplayer_tldraw_path}")
-        multiplayer_tldraw_home = os.path.join(multiplayer_tldraw_path, "tldraw_home.json")
-        with open(multiplayer_tldraw_home, 'w') as f:
-            json.dump(tldraw_content, f, indent=4)
-        logging.info(f"tldraw file created at {multiplayer_tldraw_home}")
-        
     # TLDraw File Creation
     def create_default_tldraw_file(self, node_path, node_data):
         """Create a tldraw file for a node."""
@@ -397,27 +293,7 @@ class ClassroomCopilotFilesystem:
                         "name": "Page 1",
                         "index": "a1",
                         "typeName": "page"
-                                        },
-                    "shape:transcriptionText-1": {
-                        "x": 20,
-                        "y": 40,
-                        "rotation": 0,
-                        "isLocked": False,
-                        "opacity": 1,
-                        "meta": {},
-                        "id": "shape:transcriptionText-1",
-                        "type": "transcriptionText",
-                        "props": {
-                            "text": "Sample text",
-                            "w": 1000,
-                            "h": 30,
-                            "sentenceId": "1",
-                            "isComplete": True
-                        },
-                        "parentId": "page:page",
-                        "index": "a2",
-                        "typeName": "shape"
-                    }
+                    },
                 },
                 "schema": {
                     "schemaVersion": 2,
