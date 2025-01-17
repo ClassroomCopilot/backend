@@ -5,6 +5,8 @@ COPY requirements.txt .
 
 # Combine system dependencies installation and Python package installation
 RUN apt-get update && apt-get install -y \
+    libreoffice \
+    poppler-utils \
     && python -m venv /opt/venv \
     && . /opt/venv/bin/activate \
     && pip install --upgrade pip \

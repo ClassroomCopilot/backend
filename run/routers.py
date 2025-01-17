@@ -10,7 +10,7 @@ from routers.dev.tests import timetable_test
 from routers.database import admin
 from routers.database.init import entity_init, calendar, timetables, curriculum, get_data, schools
 from routers.database.tools import get_nodes, get_nodes_and_edges, tldraw_filesystem, reactflow_router, get_events
-from routers.transcribe import utterance
+from routers.assets import powerpoint
 from routers.llm.private.ollama import ollama
 from routers.llm.public.openai import openai
 from routers.connections.arbor_router import router as arbor_router
@@ -20,6 +20,8 @@ from routers.rpi import rpi_whisperlive_client
 from routers.external import youtube
 
 def register_routes(app: FastAPI):
+    logger.info("Starting to register routes...")
+
     # Health check route
     app.include_router(health_router, prefix="/api", tags=["Health"])
 
@@ -41,9 +43,9 @@ def register_routes(app: FastAPI):
 
     # Database Filesystem Routes
     app.include_router(tldraw_filesystem.router, prefix="/api/database/tldraw_fs", tags=["TLDraw Filesystem"])
-
-    # Transcription Routes
-    app.include_router(utterance.router, prefix="/api/transcribe/utterance", tags=["Utterance"])
+    
+    # Assets Routes
+    app.include_router(powerpoint.router, prefix="/api/assets/powerpoint", tags=["PowerPoint"])
 
     # LLM Routes
     app.include_router(ollama.router, prefix="/api/llm/private/ollama", tags=["LLM"])

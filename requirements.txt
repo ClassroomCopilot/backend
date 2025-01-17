@@ -63,3 +63,6 @@ langchain-openai
 langgraph
 #langgraph-checkpoint
 #langgraph-checkpoint-postgres
+
+python-pptx
+Pillow
