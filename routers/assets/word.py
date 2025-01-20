@@ -17,6 +17,7 @@ import asyncio
 import psutil
 import math
 import time
+from docx import Document
 
 router = APIRouter()
 
@@ -50,12 +51,80 @@ def calculate_optimal_workers():
     
     return final_workers
 
-def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 30) -> dict:
+def extract_text_from_paragraph(paragraph):
+    """Extract text from a Word paragraph and format as markdown."""
+    text = paragraph.text.strip()
+    if not text:
+        return ''
+    
+    # Handle different heading levels
+    if paragraph.style.name.startswith('Heading'):
+        level = int(paragraph.style.name[-1])
+        return f"{'#' * level} {text}"
+    
+    # Handle lists
+    if paragraph._element.pPr is not None and paragraph._element.pPr.numPr is not None:
+        return f"* {text}"
+    
+    return text
+
+def extract_text_from_table(table):
+    """Extract text from a Word table and format as markdown."""
+    # Process header row
+    header_row = []
+    header_row.extend((cell.text.strip() or ' ') for cell in table.rows[0].cells)
+    table_text = [
+        '| ' + ' | '.join(header_row) + ' |',
+        '|' + '---|' * (len(header_row) - 1) + '---|',
+    ]
+    # Process remaining rows
+    for row in table.rows[1:]:
+        row_text = []
+        row_text.extend((cell.text.strip() or ' ') for cell in row.cells)
+        table_text.append('| ' + ' | '.join(row_text) + ' |')
+
+    return '\n'.join(table_text)
+
+def extract_page_text(doc, page_index):
+    """Extract text from a Word document page and format as markdown."""
+    # Note: python-docx doesn't provide direct page access, so we'll use a heuristic
+    # to group paragraphs into pages based on content length
+    CHARS_PER_PAGE = 3000  # Approximate characters per page
+
+    all_blocks = []
+    current_chars = 0
+    current_page = 0
+
+    for element in doc.element.body:
+        if current_page > page_index:
+            break
+
+        if element.tag.endswith('p'):
+            paragraph = doc.paragraphs[len(all_blocks)]
+            if text := extract_text_from_paragraph(paragraph):
+                current_chars += len(text)
+                if current_page == page_index:
+                    all_blocks.append(text)
+        elif element.tag.endswith('tbl'):
+            table = doc.tables[sum(isinstance(b, str) for b in all_blocks)]
+            if text := extract_text_from_table(table):
+                current_chars += len(text)
+                if current_page == page_index:
+                    all_blocks.append(text)
+
+        if current_chars >= CHARS_PER_PAGE:
+            current_page += 1
+            current_chars = 0
+
+    return '\n\n'.join(all_blocks)
+
+def process_page(temp_dir: str, pdf_path: str, docx_path: str, page_info: tuple, timeout: int = 30) -> dict:
     """
-    Worker function to process a single page and enforce 16:9 aspect ratio.
+    Worker function to process a single page and maintain A4 proportions.
     Args:
         temp_dir: Path to temporary directory
         pdf_path: Path to PDF file
+        docx_path: Path to Word file
         page_info: Tuple of (index, page_number)
         timeout: Maximum time in seconds to process a single page
     Returns:
@@ -66,6 +135,10 @@ def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 
     output_prefix = str(Path(temp_dir) / f"page_{page_num}")
 
     try:
+        # Extract text from Word document
+        doc = Document(docx_path)
+        page_text = extract_page_text(doc, page_idx)
+
         # Convert PDF page to PNG with timeout
         process = subprocess.Popen(
             [
@@ -100,7 +173,13 @@ def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 
 
         # Open and process the image
         with Image.open(output_file) as img:
-            return _process_image(img, i)
+            result = _process_image(img, i)
+            if result['success']:
+                result['meta'] = {
+                    'text': page_text,
+                    'format': 'markdown'
+                }
+            return result
     except Exception as e:
         logger.error(f"Error processing page {page_num}: {str(e)}")
         return {
@@ -149,7 +228,7 @@ def _process_image(img: Image.Image, index: int) -> dict:
             "success": False,
         }
 
-async def process_pages_in_chunks(temp_dir: str, pdf_path: str, visible_pages: list, chunk_size: int = 5):
+async def process_pages_in_chunks(temp_dir: str, pdf_path: str, docx_path: str, visible_pages: list, chunk_size: int = 5):
     """Process pages in chunks to manage memory better."""
     all_processed_pages = []
     num_workers = calculate_optimal_workers()
@@ -179,7 +258,7 @@ async def process_pages_in_chunks(temp_dir: str, pdf_path: str, visible_pages: l
             # Submit chunk of tasks
             future_to_page = {
                 executor.submit(
-                    process_page, temp_dir, pdf_path, page_info
+                    process_page, temp_dir, pdf_path, docx_path, page_info
                 ): page_info
                 for page_info in chunk
             }
@@ -295,7 +374,7 @@ async def convert_docx_to_images(file: UploadFile = File(...)):
 
                     # Calculate chunk size based on number of pages
                     chunk_size = min(5, max(2, math.ceil(num_pages / 4)))
-                    processed_pages = await process_pages_in_chunks(str(temp_dir), str(pdf_path), visible_pages, chunk_size)
+                    processed_pages = await process_pages_in_chunks(str(temp_dir), str(pdf_path), str(docx_path), visible_pages, chunk_size)
 
                     if not processed_pages:
                         raise Exception("Failed to process any pages successfully")

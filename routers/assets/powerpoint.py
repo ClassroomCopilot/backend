@@ -52,12 +52,57 @@ def calculate_optimal_workers():
     
     return final_workers
 
-def process_slide(temp_dir: str, pdf_path: str, slide_info: tuple, timeout: int = 30) -> dict:
+def extract_text_from_shape(shape):
+    """Extract text from a PowerPoint shape."""
+    if hasattr(shape, 'text') and shape.text.strip():
+        return shape.text.strip()
+
+    # Handle tables
+    if shape.has_table:
+        table_text = []
+        for row in shape.table.rows:
+            row_text = []
+            row_text.extend(cell.text.strip() for cell in row.cells if cell.text.strip())
+            if row_text:
+                table_text.append('| ' + ' | '.join(row_text) + ' |')
+        if table_text:
+            # Add markdown table header separator
+            table_text.insert(1, '|' + '---|' * (len(table_text[0].split('|')) - 2))
+            return '\n'.join(table_text)
+
+    # Handle grouped shapes
+    if hasattr(shape, 'shapes'):
+        group_text = []
+        for subshape in shape.shapes:
+            if text := extract_text_from_shape(subshape):
+                group_text.append(text)
+        return '\n'.join(group_text) if group_text else ''
+
+    return ''
+
+def extract_slide_text(slide):
+    """Extract text from a PowerPoint slide and format as markdown."""
+    slide_text = []
+
+    # Extract title if present
+    if slide.shapes.title and slide.shapes.title.text.strip():
+        slide_text.append(f"# {slide.shapes.title.text.strip()}")
+
+    # Process all shapes
+    for shape in slide.shapes:
+        if shape != slide.shapes.title:  # Skip title as we've already processed it
+            if text := extract_text_from_shape(shape):
+                slide_text.append(text)
+
+    return '\n\n'.join(slide_text)
+
+def process_slide(temp_dir: str, pdf_path: str, pptx_path: str, slide_info: tuple, timeout: int = 30) -> dict:
     """
     Worker function to process a single slide and enforce 16:9 aspect ratio.
     Args:
         temp_dir: Path to temporary directory
         pdf_path: Path to PDF file
+        pptx_path: Path to PowerPoint file
         slide_info: Tuple of (index, slide_number)
         timeout: Maximum time in seconds to process a single slide
     Returns:
@@ -68,6 +113,10 @@ def process_slide(temp_dir: str, pdf_path: str, slide_info: tuple, timeout: int 
     output_prefix = str(Path(temp_dir) / f"slide_{slide_num}")
 
     try:
+        # Extract text from PowerPoint slide
+        prs = Presentation(pptx_path)
+        slide_text = extract_slide_text(prs.slides[slide_idx])
+
         # Convert PDF page to PNG with timeout
         process = subprocess.Popen(
             [
@@ -102,7 +151,13 @@ def process_slide(temp_dir: str, pdf_path: str, slide_info: tuple, timeout: int 
 
         # Open and process the image
         with Image.open(output_file) as img:
-            return _process_image(img, i)
+            result = _process_image(img, i)
+            if result['success']:
+                result['meta'] = {
+                    'text': slide_text,
+                    'format': 'markdown'
+                }
+            return result
     except Exception as e:
         logger.error(f"Error processing slide {slide_num}: {str(e)}")
         return {
@@ -148,7 +203,7 @@ def _process_image(img: Image.Image, index: int) -> dict:
             "success": False,
         }
 
-async def process_slides_in_chunks(temp_dir: str, pdf_path: str, visible_slides: list, chunk_size: int = 5):
+async def process_slides_in_chunks(temp_dir: str, pdf_path: str, pptx_path: str, visible_slides: list, chunk_size: int = 5):
     """Process slides in chunks to manage memory better."""
     all_processed_slides = []
     num_workers = calculate_optimal_workers()
@@ -178,7 +233,7 @@ async def process_slides_in_chunks(temp_dir: str, pdf_path: str, visible_slides:
             # Submit chunk of tasks
             future_to_slide = {
                 executor.submit(
-                    process_slide, temp_dir, pdf_path, slide_info
+                    process_slide, temp_dir, pdf_path, pptx_path, slide_info
                 ): slide_info
                 for slide_info in chunk
             }
@@ -221,12 +276,18 @@ async def convert_pptx_to_images(file: UploadFile = File(...)):
         async with processing_semaphore:  # Control concurrent processing
             start_time = time.time()
             # Log request details
-            logger.info(f"Received file upload request", {
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "current_memory_usage_gb": psutil.Process().memory_info().rss / (1024**3),
-                "cpu_percent": psutil.cpu_percent(interval=1)
-            })
+            logger.info(
+                "Received file upload request",
+                {
+                    "filename": file.filename,
+                    "content_type": file.content_type,
+                    "current_memory_usage_gb": psutil.Process()
+                    .memory_info()
+                    .rss
+                    / (1024**3),
+                    "cpu_percent": psutil.cpu_percent(interval=1),
+                },
+            )
 
             # Validate file
             if not file.filename.endswith('.pptx'):
@@ -293,14 +354,14 @@ async def convert_pptx_to_images(file: UploadFile = File(...)):
 
                     # Calculate chunk size based on number of slides
                     chunk_size = min(5, max(2, math.ceil(num_slides / 4)))
-                    processed_slides = await process_slides_in_chunks(str(temp_dir), str(pdf_path), visible_slides, chunk_size)
-                    
+                    processed_slides = await process_slides_in_chunks(str(temp_dir), str(pdf_path), str(pptx_path), visible_slides, chunk_size)
+
                     if not processed_slides:
                         raise Exception("Failed to process any slides successfully")
-                    
+
                     # Sort slides by index
                     processed_slides.sort(key=lambda x: x['index'])
-                    
+
                     logger.info(f"Successfully processed {len(processed_slides)} slides")
 
                     # After processing all slides

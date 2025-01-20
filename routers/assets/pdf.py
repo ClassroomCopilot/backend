@@ -17,6 +17,9 @@ import asyncio
 import psutil
 import math
 import time
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTTextContainer, LTChar, LTLine, LTRect, LTFigure, LTTextBox, LTTextBoxHorizontal, LTTextLine
+import re
 
 router = APIRouter()
 
@@ -50,9 +53,98 @@ def calculate_optimal_workers():
     
     return final_workers
 
+def is_heading(textbox, page_height):
+    """Determine if a textbox is likely a heading based on font size and position."""
+    if not isinstance(textbox, LTTextContainer):
+        return False, 0
+
+    # Get the most common font size in the textbox
+    font_sizes = []
+    for text_line in textbox._objs:
+        if isinstance(text_line, LTTextLine):
+            font_sizes.extend(
+                char.size
+                for char in text_line._objs
+                if isinstance(char, LTChar)
+            )
+    if not font_sizes:
+        return False, 0
+
+    most_common_size = max(set(font_sizes), key=font_sizes.count)
+
+    # Position near top of page suggests a heading
+    is_near_top = textbox.y1 > (page_height - 100)
+
+    # Determine heading level based on font size and position
+    if most_common_size > 20 or is_near_top:
+        return True, 1
+    elif most_common_size > 16:
+        return True, 2
+    elif most_common_size > 14:
+        return True, 3
+
+    return False, 0
+
+def clean_text(text):
+    """Clean and normalize text content."""
+    # Remove multiple spaces and newlines
+    text = re.sub(r'\s+', ' ', text)
+    # Remove special characters often found in PDFs
+    text = re.sub(r'[^\x00-\x7F]+', '', text)
+    return text.strip()
+
+def extract_page_text(page):
+    """Extract text from a PDF page and format as markdown."""
+    page_height = page.height
+    text_elements = []
+    current_list_items = []
+    
+    # First pass: collect all text elements and identify their roles
+    for element in page:
+        if isinstance(element, LTTextContainer):
+            text = clean_text(element.get_text())
+            if not text:
+                continue
+            
+            is_head, level = is_heading(element, page_height)
+            
+            # Check if this looks like a list item
+            is_list_item = bool(re.match(r'^[\u2022\u2023\u25E6\u2043\u2219•\-*]\s', text))
+            
+            if is_head:
+                # If we have pending list items, add them first
+                if current_list_items:
+                    text_elements.extend(current_list_items)
+                    current_list_items = []
+                text_elements.append((f"{'#' * level} {text.lstrip('1234567890.-* ')}", element.y1))
+            elif is_list_item:
+                current_list_items.append((f"* {text.lstrip('1234567890.-* ')}", element.y1))
+            else:
+                # If this is regular text and we have pending list items
+                if current_list_items:
+                    # Check if this text is part of the same list (similar y-position)
+                    if any(abs(item[1] - element.y1) < 20 for item in current_list_items):
+                        current_list_items.append((f"* {text}", element.y1))
+                        continue
+                    else:
+                        # Add pending list items before adding this text
+                        text_elements.extend(current_list_items)
+                        current_list_items = []
+                text_elements.append((text, element.y1))
+    
+    # Add any remaining list items
+    if current_list_items:
+        text_elements.extend(current_list_items)
+    
+    # Sort elements by vertical position (top to bottom)
+    text_elements.sort(key=lambda x: -x[1])
+    
+    # Return just the text parts, properly formatted
+    return '\n\n'.join(element[0] for element in text_elements)
+
 def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 30) -> dict:
     """
-    Worker function to process a single page and enforce 16:9 aspect ratio.
+    Worker function to process a single page and maintain A4 proportions.
     Args:
         temp_dir: Path to temporary directory
         pdf_path: Path to PDF file
@@ -66,6 +158,9 @@ def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 
     output_prefix = str(Path(temp_dir) / f"page_{page_num}")
 
     try:
+        # Extract text from PDF page
+        pages = list(extract_pages(pdf_path, page_numbers=[page_idx]))
+        page_text = extract_page_text(pages[0]) if pages else ""
         # Convert PDF page to PNG with timeout
         process = subprocess.Popen(
             [
@@ -84,7 +179,7 @@ def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        
+
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -100,7 +195,13 @@ def process_page(temp_dir: str, pdf_path: str, page_info: tuple, timeout: int = 
 
         # Open and process the image
         with Image.open(output_file) as img:
-            return _process_image(img, i)
+            result = _process_image(img, i)
+            if result['success']:
+                result['meta'] = {
+                    'text': page_text,
+                    'format': 'markdown'
+                }
+            return result
     except Exception as e:
         logger.error(f"Error processing page {page_num}: {str(e)}")
         return {
@@ -222,12 +323,18 @@ async def convert_pdf_to_images(file: UploadFile = File(...)):
         async with processing_semaphore:  # Control concurrent processing
             start_time = time.time()
             # Log request details
-            logger.info(f"Received file upload request", {
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "current_memory_usage_gb": psutil.Process().memory_info().rss / (1024**3),
-                "cpu_percent": psutil.cpu_percent(interval=1)
-            })
+            logger.info(
+                "Received file upload request",
+                {
+                    "filename": file.filename,
+                    "content_type": file.content_type,
+                    "current_memory_usage_gb": psutil.Process()
+                    .memory_info()
+                    .rss
+                    / (1024**3),
+                    "cpu_percent": psutil.cpu_percent(interval=1),
+                },
+            )
 
             # Validate file
             if not file.filename.endswith('.pdf'):
@@ -273,13 +380,13 @@ async def convert_pdf_to_images(file: UploadFile = File(...)):
                     # Calculate chunk size based on number of pages
                     chunk_size = min(5, max(2, math.ceil(num_pages / 4)))
                     processed_pages = await process_pages_in_chunks(str(temp_dir), str(pdf_path), visible_pages, chunk_size)
-                    
+
                     if not processed_pages:
                         raise Exception("Failed to process any pages successfully")
-                    
+
                     # Sort pages by index
                     processed_pages.sort(key=lambda x: x['index'])
-                    
+
                     logger.info(f"Successfully processed {len(processed_pages)} pages")
 
                     # After processing all pages

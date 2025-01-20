@@ -64,6 +64,9 @@ langgraph
 #langgraph-checkpoint
 #langgraph-checkpoint-postgres
 
+# Document Processing
 python-pptx
+python-docx
+pdfminer.six
 Pillow
 psutil
