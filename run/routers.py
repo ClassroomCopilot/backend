@@ -10,7 +10,7 @@ from routers.dev.tests import timetable_test
 from routers.database import admin
 from routers.database.init import entity_init, calendar, timetables, curriculum, get_data, schools
 from routers.database.tools import get_nodes, get_nodes_and_edges, tldraw_filesystem, reactflow_router, get_events
-from routers.assets import powerpoint
+from routers.assets import powerpoint, word, pdf
 from routers.llm.private.ollama import ollama
 from routers.llm.public.openai import openai
 from routers.connections.arbor_router import router as arbor_router
@@ -46,6 +46,8 @@ def register_routes(app: FastAPI):
     
     # Assets Routes
     app.include_router(powerpoint.router, prefix="/api/assets/powerpoint", tags=["PowerPoint"])
+    app.include_router(word.router, prefix="/api/assets/word", tags=["Word"])
+    app.include_router(pdf.router, prefix="/api/assets/pdf", tags=["PDF"])
 
     # LLM Routes
     app.include_router(ollama.router, prefix="/api/llm/private/ollama", tags=["LLM"])
