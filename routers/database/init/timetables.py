@@ -113,7 +113,7 @@ async def process_worker_timetable(file_content, user_node_data, worker_node_dat
             
             # Create timetable in school database
             logging.info(f"Initializing worker timetable for school worker: {school_worker_node['teacher_code']}")
-            # init_worker_timetable.init_worker_timetable(timetable_df, school_worker_node)
+            init_worker_timetable.init_worker_timetable(timetable_df, school_worker_node)
             logging.info(f"Worker timetable initialized for school worker: {school_worker_node['teacher_code']}")
             
             # Create timetable in user database
