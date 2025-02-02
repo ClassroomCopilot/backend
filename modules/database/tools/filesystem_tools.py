@@ -214,46 +214,54 @@ class ClassroomCopilotFilesystem:
             pastoral_path = os.path.join(school_path, "pastoral")
 
         return self.create_directory(pastoral_path), pastoral_path
+    
+    def create_school_department_directory(self, school_path, department):
+        """Create a directory for a specific department within the school."""
+        department_path = os.path.join(school_path, "departments", f"{department}")
+        return self.create_directory(department_path), department_path
+    
+    def create_department_subject_directory(self, department_path, subject_code):
+        """Create a directory for a specific subject within a department."""
+        subject_path = os.path.join(department_path, "subjects", f"{subject_code}")
+        return self.create_directory(subject_path), subject_path
         
-    def create_school_curriculum_key_stage_directory(self, curriculum_path, key_stage):
-        """Create a directory for a specific key stage within the curriculum."""
-        key_stage_path = os.path.join(curriculum_path, "key_stages", f"{key_stage}")
-        return self.create_directory(key_stage_path), key_stage_path
-    
-    def create_school_curriculum_keystage_syllabus_directory(self, curriculum_path, key_stage, key_stage_syllabus):
-        """Create a directory for a specific key stage syllabus."""
-        key_stage_syllabus_path = os.path.join(curriculum_path, "key_stages", f"{key_stage}", "syllabus", f"{key_stage_syllabus}")
-        return self.create_directory(key_stage_syllabus_path), key_stage_syllabus_path
-    
-    def create_school_curriculum_year_group_directory(self, curriculum_path, year_group):
-        """Create a directory for a specific year group."""
-        year_group_path = os.path.join(curriculum_path, "year_groups", f"{year_group}")
+    def create_curriculum_key_stage_syllabus_directory(self, curriculum_path, key_stage, subject_code, syllabus_id):
+        """Create a directory for a specific key stage syllabus under the curriculum structure."""
+        syllabus_path = os.path.join(curriculum_path, "subjects", subject_code, "key_stage_syllabuses", f"KS{key_stage}", f"{syllabus_id}")
+        return self.create_directory(syllabus_path), syllabus_path
+
+    def create_pastoral_year_group_directory(self, pastoral_path, year_group):
+        """Create a directory for a specific year group under the pastoral structure."""
+        year_group_path = os.path.join(pastoral_path, "year_groups", f"{year_group}")
         return self.create_directory(year_group_path), year_group_path
-    
-    def create_school_curriculum_year_group_syllabus_directory(self, curriculum_path, year_group, year_group_syllabus):
-        """Create a directory for a specific year group syllabus."""
-        year_group_syllabus_path = os.path.join(curriculum_path, "year_groups", f"{year_group}", "syllabus", f"{year_group_syllabus}")
-        return self.create_directory(year_group_syllabus_path), year_group_syllabus_path
-    
-    def create_school_curriculum_topic_directory(self, curriculum_path, year_group, year_group_syllabus, topic):
-        """Create a directory for a specific topic."""
-        topic_path = os.path.join(curriculum_path, "year_groups", f"{year_group}", "syllabus", f"{year_group_syllabus}", "topics", f"{topic}")
+        
+    def create_curriculum_year_group_syllabus_directory(self, curriculum_path, subject_code, year_group, syllabus_id):
+        """Create a directory for a specific year group syllabus under the curriculum structure."""
+        syllabus_path = os.path.join(curriculum_path, "subjects", subject_code, "year_group_syllabuses", f"Y{year_group}", f"{syllabus_id}")
+        return self.create_directory(syllabus_path), syllabus_path
+        
+    def create_curriculum_topic_directory(self, year_group_syllabus_path, topic_id):
+        """Create a directory for a specific topic under a year group syllabus."""
+        topic_path = os.path.join(year_group_syllabus_path, "topics", f"{topic_id}")
         return self.create_directory(topic_path), topic_path
-    
-    def create_school_curriculum_lesson_directory(self, curriculum_path, year_group, year_group_syllabus, topic, lesson):
-        """Create a directory for a specific lesson."""
-        lesson_path = os.path.join(curriculum_path, "year_groups", f"{year_group}", "syllabus", f"{year_group_syllabus}", "topics", f"{topic}", "lessons", f"{lesson}")
+        
+    def create_curriculum_lesson_directory(self, topic_path, lesson_id):
+        """Create a directory for a specific lesson under a topic."""
+        lesson_path = os.path.join(topic_path, "lessons", f"{lesson_id}")
         return self.create_directory(lesson_path), lesson_path
-    
-    def create_school_curriculum_lesson_learning_statement_directory(self, curriculum_path, year_group, year_group_syllabus, topic, lesson, learning_statement):
-        """Create a directory for a specific learning statement."""
-        learning_statement_path = os.path.join(curriculum_path, "year_groups", f"{year_group}", "syllabus", f"{year_group_syllabus}", "topics", f"{topic}", "lessons", f"{lesson}", "learning_statements", f"{learning_statement}")
-        return self.create_directory(learning_statement_path), learning_statement_path
-    
+        
+    def create_curriculum_learning_statement_directory(self, lesson_path, statement_id):
+        """Create a directory for a specific learning statement under a lesson."""
+        statement_path = os.path.join(lesson_path, "learning_statements", f"{statement_id}")
+        return self.create_directory(statement_path), statement_path
+
+    # Remove or mark as deprecated the old methods
+
+
     def create_teacher_timetable_directory(self, teacher_path):
         teacher_timetable_path = os.path.join(teacher_path, "timetable")
         return self.create_directory(teacher_timetable_path), teacher_timetable_path
-    
+
     def create_teacher_class_directory(self, teacher_timetable_path, class_name):
         class_path = os.path.join(teacher_timetable_path, "classes", class_name)
         return self.create_directory(class_path), class_path

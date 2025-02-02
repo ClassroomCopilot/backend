@@ -34,6 +34,7 @@ def initialise_schools_from_config():
         school_config = default_config
     
         db_name = f"cc.ccschools.{school_config['school_uuid']}"
+        curriculum_db_name = f"{db_name}.curriculum"
         
         logger.info(f"Creating database for {school_config['school_name']} using db_name: {db_name}")
         driver = driver_tools.get_driver()
@@ -42,8 +43,13 @@ def initialise_schools_from_config():
             return
         
         with driver.session() as session:
+            # Create main school database
             session_tools.create_database(session, db_name)
             logger.debug(f"Database {db_name} created")
+            
+            # Create curriculum database
+            session_tools.create_database(session, curriculum_db_name)
+            logger.debug(f"Curriculum database {curriculum_db_name} created")
         
         # Add filesystem path debugging
         base_path = os.getenv("NODE_FILESYSTEM_PATH")
@@ -89,6 +95,7 @@ def initialise_schools_from_config():
         logger.info(f"Creating timetable entries for {school_config['school_name']} using timetable file: {timetable_file}.")
         school_timetable_dataframes = xl.create_dataframes(timetable_file)
         
+        
         init_school_timetable.create_school_timetable(
             dataframes=school_timetable_dataframes, 
             db_name=db_name, 
@@ -96,15 +103,15 @@ def initialise_schools_from_config():
         )
         logger.success("Timetable entries created successfully")
 
-        # Create curriculum entries for school from Excel file
+        # Create curriculum entries for school from Excel file in both databases
         curriculum_file = os.path.join(os.getenv("BACKEND_INIT_PATH"), school_config["curriculum_file"])
-        
         school_curriculum_dataframes = xl.create_dataframes(curriculum_file)
         
         logger.info(f"Creating curriculum entries for {school_config['school_name']} using curriculum file: {curriculum_file}.")
         init_curriculum.create_curriculum(
             dataframes=school_curriculum_dataframes, 
-            db_name=db_name, 
+            db_name=db_name,
+            curriculum_db_name=curriculum_db_name,
             school_node=refreshed_school_node
         )
         logger.success("Curriculum entries created successfully")

@@ -18,10 +18,25 @@ class SubjectForKeyStage(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'SUBJECT_FOR_KEY_STAGE'
     source: neo_curriculum.SubjectNode
     target: neo_curriculum.KeyStageNode
+    
+class SubjectHasYearGroupSyllabus(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'SUBJECT_HAS_YEAR_GROUP_SYLLABUS'
+    source: neo_curriculum.SubjectNode
+    target: neo_curriculum.YearGroupSyllabusNode
+    
+class SubjectHasKeyStageSyllabus(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'SUBJECT_HAS_KEY_STAGE_SYLLABUS'
+    source: neo_curriculum.SubjectNode
+    target: neo_curriculum.KeyStageSyllabusNode
 
 class TopicPartOfYearGroupSyllabus(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'YEAR_SYLLABUS_INCLUDES_TOPIC'
     source: neo_curriculum.YearGroupSyllabusNode
+    target: neo_curriculum.TopicNode
+    
+class KeyStageSyllabusIncludesTopic(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'KEY_STAGE_SYLLABUS_INCLUDES_TOPIC'
+    source: neo_curriculum.KeyStageSyllabusNode
     target: neo_curriculum.TopicNode
 
 class YearGroupHasYearGroupSyllabus(BaseRelationship):
@@ -95,3 +110,8 @@ class TopicLessonFollowsTopicLesson(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'LESSON_FOLLOWS_LESSON'
     source: neo_curriculum.TopicLessonNode
     target: neo_curriculum.TopicLessonNode
+    
+class YearGroupSyllabusIncludesTopic(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'YEAR_GROUP_SYLLABUS_INCLUDES_TOPIC'
+    source: neo_curriculum.YearGroupSyllabusNode
+    target: neo_curriculum.TopicNode

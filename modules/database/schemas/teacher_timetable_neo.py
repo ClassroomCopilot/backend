@@ -2,7 +2,7 @@ from modules.database.tools.neontology.basenode import BaseNode
 import datetime
 from typing import ClassVar, Optional, List
 
-# Timetable layer
+# Base Timetable layer
 class TeacherTimetableNode(BaseNode):
     __primarylabel__: ClassVar[str] = 'TeacherTimetable'
     __primaryproperty__: ClassVar[str] = 'unique_id'
@@ -18,6 +18,23 @@ class TeacherTimetableNode(BaseNode):
             "merged": self.merged.isoformat() if self.merged else None,
         }
 
+# User-specific timetable node with school references
+class UserTeacherTimetableNode(TeacherTimetableNode):
+    __primarylabel__: ClassVar[str] = 'UserTeacherTimetable'
+    __primaryproperty__: ClassVar[str] = 'unique_id'
+    unique_id: str
+    school_db_name: str  # Reference to school database
+    school_timetable_id: str  # Reference to school timetable node
+    
+    def to_dict(self):
+        base_dict = super().to_dict()
+        base_dict.update({
+            "school_db_name": self.school_db_name,
+            "school_timetable_id": self.school_timetable_id,
+        })
+        return base_dict
+
+# Base lesson node
 class TimetableLessonNode(BaseNode):
     __primarylabel__: ClassVar[str] = 'TimetableLesson'
     __primaryproperty__: ClassVar[str] = 'unique_id'
@@ -42,6 +59,22 @@ class TimetableLessonNode(BaseNode):
             "created": self.created.isoformat() if self.created else None,
             "merged": self.merged.isoformat() if self.merged else None,
         }
+
+# User-specific lesson node with school references
+class UserTimetableLessonNode(TimetableLessonNode):
+    __primarylabel__: ClassVar[str] = 'UserTimetableLesson'
+    __primaryproperty__: ClassVar[str] = 'unique_id'
+    unique_id: str
+    school_db_name: str  # Reference to school database
+    school_period_id: str  # Reference to school period node
+    
+    def to_dict(self):
+        base_dict = super().to_dict()
+        base_dict.update({
+            "school_db_name": self.school_db_name,
+            "school_period_id": self.school_period_id,
+        })
+        return base_dict
 
 class PlannedLessonNode(BaseNode):
     __primarylabel__: ClassVar[str] = 'PlannedLesson'

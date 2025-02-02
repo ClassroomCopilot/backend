@@ -1,5 +1,6 @@
 import modules.database.schemas.timetable_neo as neo_timetable
 import modules.database.schemas.calendar_neo as neo_calendar
+import modules.database.schemas.teacher_timetable_neo as neo_teacher_timetable
 from modules.database.tools.neontology.baserelationship import BaseRelationship
 from typing import ClassVar
 
@@ -71,4 +72,25 @@ class CalendarDayIsStaffDay(BaseRelationship):
 class StaffDayIsCalendarDay(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'IS_CALENDAR_DAY'
     source: neo_timetable.StaffDayNode
+    target: neo_calendar.CalendarDayNode
+
+# New relationships for user timetable
+class CalendarDayHasTimetableLesson(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'HAS_TIMETABLE_LESSON'
+    source: neo_calendar.CalendarDayNode
+    target: neo_teacher_timetable.TimetableLessonNode
+
+class TimetableLessonBelongsToCalendarDay(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'BELONGS_TO_CALENDAR_DAY'
+    source: neo_teacher_timetable.TimetableLessonNode
+    target: neo_calendar.CalendarDayNode
+
+class CalendarDayHasPlannedLesson(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'HAS_PLANNED_LESSON'
+    source: neo_calendar.CalendarDayNode
+    target: neo_teacher_timetable.PlannedLessonNode
+
+class PlannedLessonBelongsToCalendarDay(BaseRelationship):
+    __relationshiptype__: ClassVar[str] = 'BELONGS_TO_CALENDAR_DAY'
+    source: neo_teacher_timetable.PlannedLessonNode
     target: neo_calendar.CalendarDayNode

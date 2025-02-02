@@ -12,14 +12,44 @@ logging = logger.get_logger(
     runtime=True,
     log_format='default'
 )
+import modules.database.schemas.entity_neo as neo_entity
 import modules.database.schemas.curriculum_neo as neo_curriculum
 import modules.database.schemas.relationships.curricular_relationships as curricular_relationships
+import modules.database.schemas.relationships.entity_relationships as ent_rels
 import modules.database.schemas.relationships.entity_curriculum_rels as ent_cur_rels
 from modules.database.tools.filesystem_tools import ClassroomCopilotFilesystem
 import modules.database.tools.neontology_tools as neon
 import pandas as pd
 
-def create_curriculum(dataframes, db_name, school_node):
+# Default values for nodes
+default_topic_values = {
+    'topic_assessment_type': 'Null',
+    'topic_type': 'Null',
+    'total_number_of_lessons_for_topic': '1',
+    'topic_title': 'Null'
+}
+
+default_topic_lesson_values = {
+    'topic_lesson_title': 'Null',
+    'topic_lesson_type': 'Null',
+    'topic_lesson_length': '1',
+    'topic_lesson_suggested_activities': 'Null',
+    'topic_lesson_skills_learned': 'Null',
+    'topic_lesson_weblinks': 'Null',
+}
+
+default_learning_statement_values = {
+    'lesson_learning_statement': 'Null',
+    'lesson_learning_statement_type': 'Student learning outcome'
+}
+
+# Helper function to sort year groups numerically where possible
+def sort_year_groups(df):
+    df = df.copy()
+    df['YearGroupNumeric'] = pd.to_numeric(df['YearGroup'], errors='coerce')
+    return df.sort_values(by='YearGroupNumeric')
+
+def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
     
     fs_handler = ClassroomCopilotFilesystem(db_name, init_run_type="school")
     
@@ -41,25 +71,48 @@ def create_curriculum(dataframes, db_name, school_node):
     node_library['topic_nodes'] = {}
     node_library['topic_lesson_nodes'] = {}
     node_library['statement_nodes'] = {}
+    node_library['department_nodes'] = {}
+    node_library['subject_nodes'] = {}
     curriculum_node = None
     pastoral_node = None
     key_stage_nodes_created = {}
     year_group_nodes_created = {}
-    last_year_group_node = {}
+    last_year_group_node = None
     last_key_stage_node = None
     
-    # Create Curriculum and Pastoral nodes and relationships with School
+    # Create Curriculum and Pastoral nodes and relationships with School in both databases
     _, curriculum_path = fs_handler.create_school_curriculum_directory(school_node.path)
     _, pastoral_path = fs_handler.create_school_pastoral_directory(school_node.path)
+    
+    # Create Department Structure node
+    department_structure_node_unique_id = f"DepartmentStructure_{school_node.unique_id}"
+    department_structure_node = neo_entity.DepartmentStructureNode(
+        unique_id=department_structure_node_unique_id,
+        path=os.path.join(school_node.path, "departments")
+    )
+    # Create in school database only
+    neon.create_or_merge_neontology_node(department_structure_node, database=db_name, operation='merge')
+    fs_handler.create_default_tldraw_file(department_structure_node.path, department_structure_node.to_dict())
+    node_library['department_structure_node'] = department_structure_node
+    
+    # Link Department Structure to School
+    neon.create_or_merge_neontology_relationship(
+        ent_rels.SchoolHasDepartmentStructure(source=school_node, target=department_structure_node),
+        database=db_name, operation='merge'
+    )
+    logging.info(f"Created department structure node and linked to school")
+    
     curriculum_structure_node_unique_id = f"CurriculumStructure_{school_node.unique_id}"
     curriculum_node = neo_curriculum.CurriculumStructureNode(
         unique_id=curriculum_structure_node_unique_id,
         path=curriculum_path
     )
+    # Create in school database only
     neon.create_or_merge_neontology_node(curriculum_node, database=db_name, operation='merge')
-    # Create the tldraw file for the node
     fs_handler.create_default_tldraw_file(curriculum_node.path, curriculum_node.to_dict())
     node_library['curriculum_node'] = curriculum_node
+    
+    # Create relationship in school database only
     neon.create_or_merge_neontology_relationship(
         ent_cur_rels.SchoolHasCurriculumStructure(source=school_node, target=curriculum_node),
         database=db_name, operation='merge'
@@ -72,7 +125,6 @@ def create_curriculum(dataframes, db_name, school_node):
         path=pastoral_path
     )
     neon.create_or_merge_neontology_node(pastoral_node, database=db_name, operation='merge')
-    # Create the tldraw file for the node
     fs_handler.create_default_tldraw_file(pastoral_node.path, pastoral_node.to_dict())
     node_library['pastoral_node'] = pastoral_node
     neon.create_or_merge_neontology_relationship(
@@ -81,65 +133,175 @@ def create_curriculum(dataframes, db_name, school_node):
     )
     logging.info(f"Created pastoral node and relationship with school")
     
-    default_topic_values = {
-        'topic_assessment_type': 'Null',
-        'topic_type': 'Null',
-        'total_number_of_lessons_for_topic': '1',
-        'topic_title': 'Null'
-    }
-
-    default_topic_lesson_values = {
-        'topic_lesson_title': 'Null',
-        'topic_lesson_type': 'Null',
-        'topic_lesson_length': '1',
-        'topic_lesson_suggested_activities': 'Null',
-        'topic_lesson_skills_learned': 'Null',
-        'topic_lesson_weblinks': 'Null',
-    }
-
-    default_learning_statement_values = {
-        'lesson_learning_statement': 'Null',
-        'lesson_learning_statement_type': 'Student learning outcome'
-    }
-
-    # Function to sort year groups numerically where possible
-    def sort_year_groups(df):
-        df = df.copy()
-        df['YearGroupNumeric'] = pd.to_numeric(df['YearGroup'], errors='coerce')
-        return df.sort_values(by='YearGroupNumeric')
+    # Create departments and subjects
+    # First get unique departments
+    unique_departments = keystagesyllabus_df['Department'].dropna().unique()
     
+    for department_name in unique_departments:
+        department_unique_id = f"Department_{school_node.unique_id}_{department_name.replace(' ', '_')}"
+        _, department_path = fs_handler.create_school_department_directory(school_node.path, department_name)
+        
+        department_node = neo_entity.DepartmentNode(
+            unique_id=department_unique_id,
+            department_name=department_name,
+            path=department_path
+        )
+        # Create department in school database only
+        neon.create_or_merge_neontology_node(department_node, database=db_name, operation='merge')
+        fs_handler.create_default_tldraw_file(department_node.path, department_node.to_dict())
+        node_library['department_nodes'][department_name] = department_node
+        
+        # Link department to department structure in school database
+        neon.create_or_merge_neontology_relationship(
+            ent_rels.DepartmentStructureHasDepartment(source=department_structure_node, target=department_node),
+            database=db_name, operation='merge'
+        )
+        logging.info(f"Created department node for {department_name} and linked to department structure")
+    
+    # Create subjects and link to departments
+    # First get unique subjects from key stage syllabuses (which have department info)
+    unique_subjects = keystagesyllabus_df[['Subject', 'SubjectCode', 'Department']].drop_duplicates()
+    
+    # Then add any additional subjects from year group syllabuses (without department info)
+    additional_subjects = yeargroupsyllabus_df[['Subject', 'SubjectCode']].drop_duplicates()
+    additional_subjects = additional_subjects[~additional_subjects['SubjectCode'].isin(unique_subjects['SubjectCode'])]
+    
+    # Process subjects from key stage syllabuses first (these have department info)
+    for _, subject_row in unique_subjects.iterrows():
+        subject_unique_id = f"Subject_{school_node.unique_id}_{subject_row['SubjectCode']}"
+        department_node = node_library['department_nodes'].get(subject_row['Department'])
+        if not department_node:
+            logging.warning(f"No department found for subject {subject_row['Subject']} with code {subject_row['SubjectCode']}")
+            continue
+            
+        _, subject_path = fs_handler.create_department_subject_directory(department_node.path, subject_row['SubjectCode'])
+        
+        subject_node = neo_curriculum.SubjectNode(
+            unique_id=subject_unique_id,
+            subject_code=subject_row['SubjectCode'],
+            subject_name=subject_row['Subject'],
+            path=subject_path
+        )
+        # Create subject in both databases
+        neon.create_or_merge_neontology_node(subject_node, database=db_name, operation='merge')
+        neon.create_or_merge_neontology_node(subject_node, database=curriculum_db_name, operation='merge')
+        fs_handler.create_default_tldraw_file(subject_node.path, subject_node.to_dict())
+        node_library['subject_nodes'][subject_row['SubjectCode']] = subject_node
+        
+        # Link subject to department in school database only
+        neon.create_or_merge_neontology_relationship(
+            ent_rels.DepartmentManagesSubject(source=department_node, target=subject_node),
+            database=db_name, operation='merge'
+        )
+        logging.info(f"Created subject node for {subject_row['Subject']} and linked to department {subject_row['Department']}")
+    
+    # Process any additional subjects from year group syllabuses (these won't have department info)
+    for _, subject_row in additional_subjects.iterrows():
+        subject_unique_id = f"Subject_{school_node.unique_id}_{subject_row['SubjectCode']}"
+        # Create in a special "Unassigned" department
+        unassigned_dept_name = "Unassigned Department"
+        if unassigned_dept_name not in node_library['department_nodes']:
+            _, dept_path = fs_handler.create_school_department_directory(school_node.path, unassigned_dept_name)
+            department_node = neo_entity.DepartmentNode(
+                unique_id=f"Department_{school_node.unique_id}_Unassigned",
+                department_name=unassigned_dept_name,
+                path=dept_path
+            )
+            neon.create_or_merge_neontology_node(department_node, database=db_name, operation='merge')
+            fs_handler.create_default_tldraw_file(department_node.path, department_node.to_dict())
+            node_library['department_nodes'][unassigned_dept_name] = department_node
+            
+            # Link unassigned department to department structure
+            neon.create_or_merge_neontology_relationship(
+                ent_rels.DepartmentStructureHasDepartment(source=department_structure_node, target=department_node),
+                database=db_name, operation='merge'
+            )
+            logging.info(f"Created unassigned department node and linked to department structure")
+        
+        _, subject_path = fs_handler.create_department_subject_directory(
+            node_library['department_nodes'][unassigned_dept_name].path, 
+            subject_row['SubjectCode']
+        )
+        
+        subject_node = neo_curriculum.SubjectNode(
+            unique_id=subject_unique_id,
+            subject_code=subject_row['SubjectCode'],
+            subject_name=subject_row['Subject'],
+            path=subject_path
+        )
+        # Create subject in both databases
+        neon.create_or_merge_neontology_node(subject_node, database=db_name, operation='merge')
+        neon.create_or_merge_neontology_node(subject_node, database=curriculum_db_name, operation='merge')
+        fs_handler.create_default_tldraw_file(subject_node.path, subject_node.to_dict())
+        node_library['subject_nodes'][subject_row['SubjectCode']] = subject_node
+        
+        # Link subject to unassigned department in school database only
+        neon.create_or_merge_neontology_relationship(
+            ent_rels.DepartmentManagesSubject(
+                source=node_library['department_nodes'][unassigned_dept_name], 
+                target=subject_node
+            ),
+            database=db_name, operation='merge'
+        )
+        logging.warning(f"Created subject node for {subject_row['Subject']} in unassigned department")
+    
+    # Process key stages and syllabuses
     logging.info(f"Processing key stages")
+    last_key_stage_node = None
+    last_key_stage_syllabus_node = None
+    topics_processed = set()  # Track which topics have been processed
+    lessons_processed = set()  # Track which lessons have been processed
+    statements_processed = set()  # Track which statements have been processed
+    
     for index, ks_row in keystagesyllabus_df.sort_values('KeyStage').iterrows():
         key_stage = str(ks_row['KeyStage'])
-        _, key_stage_path = fs_handler.create_school_curriculum_key_stage_directory(curriculum_path, key_stage)
+        subject_node = node_library['subject_nodes'].get(ks_row['SubjectCode'])
+        if not subject_node:
+            logging.warning(f"No subject node found for subject code {ks_row['SubjectCode']}")
+            continue
+            
         if key_stage not in key_stage_nodes_created:
             key_stage_node_unique_id = f"KeyStage_{curriculum_node.unique_id}_KStg{key_stage}"
             key_stage_node = neo_curriculum.KeyStageNode(
                 unique_id=key_stage_node_unique_id,
                 key_stage_name=f"Key Stage {key_stage}",
                 key_stage=str(key_stage),
-                path=key_stage_path
+                path=os.path.join(curriculum_node.path, "key_stages", f"KS{key_stage}")
             )
+            # Create key stage node in both databases
             neon.create_or_merge_neontology_node(key_stage_node, database=db_name, operation='merge')
-            # Create the tldraw file for the node
+            neon.create_or_merge_neontology_node(key_stage_node, database=curriculum_db_name, operation='merge')
             fs_handler.create_default_tldraw_file(key_stage_node.path, key_stage_node.to_dict())
             key_stage_nodes_created[key_stage] = key_stage_node
             node_library['key_stage_nodes'][key_stage] = key_stage_node
+            
+            # Create relationship with curriculum structure in school database only
             neon.create_or_merge_neontology_relationship(
                 curricular_relationships.CurriculumStructureIncludesKeyStage(source=curriculum_node, target=key_stage_node),
                 database=db_name, operation='merge'
             )
-            logging.info(f"Created key stage node {key_stage_node_unique_id} and relationship with curriculum structure {curriculum_structure_node_unique_id}")
+            logging.info(f"Created key stage node {key_stage_node_unique_id} and relationship with curriculum structure")
 
+            # Create sequential relationship between key stages in both databases
             if last_key_stage_node:
                 neon.create_or_merge_neontology_relationship(
                     curricular_relationships.KeyStageFollowsKeyStage(source=last_key_stage_node, target=key_stage_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created relationship between key stages {last_key_stage_node.unique_id} and {key_stage_node.unique_id}")
+                neon.create_or_merge_neontology_relationship(
+                    curricular_relationships.KeyStageFollowsKeyStage(source=last_key_stage_node, target=key_stage_node),
+                    database=curriculum_db_name, operation='merge'
+                )
+                logging.info(f"Created sequential relationship between key stages {last_key_stage_node.unique_id} and {key_stage_node.unique_id}")
             last_key_stage_node = key_stage_node
 
-        _, key_stage_syllabus_path = fs_handler.create_school_curriculum_keystage_syllabus_directory(curriculum_path, key_stage, ks_row['ID'])
+        # Create key stage syllabus under the subject's curriculum directory
+        _, key_stage_syllabus_path = fs_handler.create_curriculum_key_stage_syllabus_directory(
+            curriculum_node.path,
+            key_stage,
+            ks_row['SubjectCode'],
+            ks_row['ID']
+        )
         logging.info(f"Created key stage syllabus directory for {key_stage_syllabus_path}")
         
         key_stage_syllabus_node_unique_id = f"KeyStageSyllabus_{curriculum_node.unique_id}_{ks_row['Title'].replace(' ', '')}"
@@ -152,20 +314,30 @@ def create_curriculum(dataframes, db_name, school_node):
             ks_syllabus_subject_code=ks_row['SubjectCode'],
             path=key_stage_syllabus_path
         )
+        # Create key stage syllabus node in both databases
         neon.create_or_merge_neontology_node(key_stage_syllabus_node, database=db_name, operation='merge')
-        # Create the tldraw file for the node
+        neon.create_or_merge_neontology_node(key_stage_syllabus_node, database=curriculum_db_name, operation='merge')
         fs_handler.create_default_tldraw_file(key_stage_syllabus_node.path, key_stage_syllabus_node.to_dict())
         node_library['key_stage_syllabus_nodes'][ks_row['ID']] = key_stage_syllabus_node
-        neon.create_or_merge_neontology_relationship(
-            curricular_relationships.KeyStageIncludesKeyStageSyllabus(source=key_stage_node, target=key_stage_syllabus_node),
-            database=db_name,
-            operation='merge'
-        )
-        logging.info(f"Created key stage syllabus node {key_stage_syllabus_node_unique_id} and relationship with key stage {key_stage_node_unique_id}")
+        
+        # Create sequential relationship between key stage syllabuses in both databases
+        if last_key_stage_syllabus_node and last_key_stage_syllabus_node.ks_syllabus_subject_code == key_stage_syllabus_node.ks_syllabus_subject_code:
+            neon.create_or_merge_neontology_relationship(
+                curricular_relationships.KeyStageSyllabusFollowsKeyStageSyllabus(source=last_key_stage_syllabus_node, target=key_stage_syllabus_node),
+                database=db_name, operation='merge'
+            )
+            neon.create_or_merge_neontology_relationship(
+                curricular_relationships.KeyStageSyllabusFollowsKeyStageSyllabus(source=last_key_stage_syllabus_node, target=key_stage_syllabus_node),
+                database=curriculum_db_name, operation='merge'
+            )
+            logging.info(f"Created sequential relationship between key stage syllabuses {last_key_stage_syllabus_node.unique_id} and {key_stage_syllabus_node.unique_id}")
+        last_key_stage_syllabus_node = key_stage_syllabus_node
 
+        # Process year groups and their syllabuses
         related_yeargroups = sort_year_groups(yeargroupsyllabus_df[yeargroupsyllabus_df['KeyStage'] == ks_row['KeyStage']])
         
         logging.info(f"Processing year groups for key stage {key_stage}")
+        last_year_group_syllabus_node = None
         for yg_index, yg_row in related_yeargroups.iterrows():
             year_group = yg_row['YearGroup']
             numeric_year_group = pd.to_numeric(year_group, errors='coerce')
@@ -173,171 +345,251 @@ def create_curriculum(dataframes, db_name, school_node):
             if pd.notna(numeric_year_group):
                 numeric_year_group = int(numeric_year_group)
                 if numeric_year_group not in year_group_nodes_created:
-                    _, year_group_path = fs_handler.create_school_curriculum_year_group_directory(curriculum_path, year_group)
+                    # Create year group directory under pastoral structure
+                    _, year_group_path = fs_handler.create_pastoral_year_group_directory(pastoral_node.path, year_group)
                     logging.info(f"Created year group directory for {year_group_path}")
                     
-                    year_group_node_unique_id = f"YearGroup_{school_node.unique_id}_YGrp{numeric_year_group}" # TODO: This unique id format does not make sense: maybe get the correct pastoral node
+                    year_group_node_unique_id = f"YearGroup_{school_node.unique_id}_YGrp{numeric_year_group}"
                     year_group_node = neo_curriculum.YearGroupNode(
                         unique_id=year_group_node_unique_id,
                         year_group=str(numeric_year_group),
                         year_group_name=f"Year {numeric_year_group}",
                         path=year_group_path
                     )
+                    # Create year group node in both databases but use same directory
                     neon.create_or_merge_neontology_node(year_group_node, database=db_name, operation='merge')
-                    # Create the tldraw file for the node
+                    neon.create_or_merge_neontology_node(year_group_node, database=curriculum_db_name, operation='merge')
                     fs_handler.create_default_tldraw_file(year_group_node.path, year_group_node.to_dict())
-                    # Create relationship with Pastoral Structure
+                    
+                    # Create sequential relationship between year groups in both databases
+                    if last_year_group_node:
+                        neon.create_or_merge_neontology_relationship(
+                            curricular_relationships.YearGroupFollowsYearGroup(source=last_year_group_node, target=year_group_node),
+                            database=db_name, operation='merge'
+                        )
+                        neon.create_or_merge_neontology_relationship(
+                            curricular_relationships.YearGroupFollowsYearGroup(source=last_year_group_node, target=year_group_node),
+                            database=curriculum_db_name, operation='merge'
+                        )
+                        logging.info(f"Created sequential relationship between year groups {last_year_group_node.unique_id} and {year_group_node.unique_id} across key stages")
+                    last_year_group_node = year_group_node
+                    
+                    # Create relationship with Pastoral Structure in school database only
                     neon.create_or_merge_neontology_relationship(
                         curricular_relationships.PastoralStructureIncludesYearGroup(source=pastoral_node, target=year_group_node),
                         database=db_name, operation='merge'
                     )
-                    logging.info(f"Created year group node {year_group_node_unique_id} and relationship with pastoral structure {pastoral_structure_node_unique_id}")
+                    logging.info(f"Created year group node {year_group_node_unique_id} and relationship with pastoral structure")
                     
                     year_group_nodes_created[numeric_year_group] = year_group_node
                     node_library['year_group_nodes'][str(numeric_year_group)] = year_group_node
-                    # Create sequential relationships correctly
-                    if numeric_year_group - 1 in last_year_group_node:
-                        neon.create_or_merge_neontology_relationship(
-                            curricular_relationships.YearGroupFollowsYearGroup(source=last_year_group_node[numeric_year_group - 1], target=year_group_node),
-                            database=db_name, operation='merge'
-                        )
-                        logging.info(f"Created relationship between year groups {last_year_group_node[numeric_year_group - 1].unique_id} and {year_group_node.unique_id}")
-                    last_year_group_node[numeric_year_group] = year_group_node
 
-            # Always create year group syllabus nodes
-            _, year_group_syllabus_path = fs_handler.create_school_curriculum_year_group_syllabus_directory(curriculum_path, year_group, yg_row['ID'])
-            logging.info(f"Created year group syllabus directory for {year_group_syllabus_path}")
-            
-            year_group_syllabus_node_unique_id = f"YearGroupSyllabus_{school_node.unique_id}_{yg_row['ID']}"
-            year_group_syllabus_node = neo_curriculum.YearGroupSyllabusNode(
-                unique_id=year_group_syllabus_node_unique_id,
-                yr_syllabus_id=yg_row['ID'],
-                yr_syllabus_name=yg_row['Title'],
-                yr_syllabus_year_group=str(yg_row['YearGroup']),
-                yr_syllabus_subject=yg_row['Subject'],
-                yr_syllabus_subject_code=yg_row['SubjectCode'],
-                path=year_group_syllabus_path
-            )
-            neon.create_or_merge_neontology_node(year_group_syllabus_node, database=db_name, operation='merge')
-            # Create the tldraw file for the node
-            fs_handler.create_default_tldraw_file(year_group_syllabus_node.path, year_group_syllabus_node.to_dict())
-            node_library['year_group_syllabus_nodes'][yg_row['ID']] = year_group_syllabus_node
-            logging.info(f"Created year group syllabus node {year_group_syllabus_node_unique_id} and relationship with key stage syllabus {key_stage_syllabus_node_unique_id}")
-            
-            if yg_row['Subject'] == ks_row['Subject']:
-                neon.create_or_merge_neontology_relationship(
-                    curricular_relationships.KeyStageSyllabusIncludesYearGroupSyllabus(source=key_stage_syllabus_node, target=year_group_syllabus_node),
-                    database=db_name, operation='merge'
+            # Create year group syllabus nodes in both databases
+            year_group_node = year_group_nodes_created.get(numeric_year_group)
+            if year_group_node:
+                # Create syllabus directory under curriculum structure
+                _, year_group_syllabus_path = fs_handler.create_curriculum_year_group_syllabus_directory(
+                    curriculum_node.path,
+                    yg_row['SubjectCode'],
+                    year_group,
+                    yg_row['ID']
                 )
-                logging.info(f"Created relationship between key stage syllabus {key_stage_syllabus_node_unique_id} and year group syllabus {year_group_syllabus_node_unique_id}")
-            if pd.notna(numeric_year_group) and str(numeric_year_group) == str(year_group_node.year_group):
+                logging.info(f"Created year group syllabus directory for {year_group_syllabus_path}")
+                
+                year_group_syllabus_node_unique_id = f"YearGroupSyllabus_{school_node.unique_id}_{yg_row['ID']}"
+                year_group_syllabus_node = neo_curriculum.YearGroupSyllabusNode(
+                    unique_id=year_group_syllabus_node_unique_id,
+                    yr_syllabus_id=yg_row['ID'],
+                    yr_syllabus_name=yg_row['Title'],
+                    yr_syllabus_year_group=str(yg_row['YearGroup']),
+                    yr_syllabus_subject=yg_row['Subject'],
+                    yr_syllabus_subject_code=yg_row['SubjectCode'],
+                    path=year_group_syllabus_path
+                )
+                
+                # Create year group syllabus node in both databases but use same directory
+                neon.create_or_merge_neontology_node(year_group_syllabus_node, database=db_name, operation='merge')
+                neon.create_or_merge_neontology_node(year_group_syllabus_node, database=curriculum_db_name, operation='merge')
+                fs_handler.create_default_tldraw_file(year_group_syllabus_node.path, year_group_syllabus_node.to_dict())
+                node_library['year_group_syllabus_nodes'][yg_row['ID']] = year_group_syllabus_node
+                
+                # Create sequential relationship between year group syllabuses in both databases
+                if last_year_group_syllabus_node and last_year_group_syllabus_node.yr_syllabus_subject_code == year_group_syllabus_node.yr_syllabus_subject_code:
+                    neon.create_or_merge_neontology_relationship(
+                        curricular_relationships.YearGroupSyllabusFollowsYearGroupSyllabus(source=last_year_group_syllabus_node, target=year_group_syllabus_node),
+                        database=db_name, operation='merge'
+                    )
+                    neon.create_or_merge_neontology_relationship(
+                        curricular_relationships.YearGroupSyllabusFollowsYearGroupSyllabus(source=last_year_group_syllabus_node, target=year_group_syllabus_node),
+                        database=curriculum_db_name, operation='merge'
+                    )
+                    logging.info(f"Created sequential relationship between year group syllabuses {last_year_group_syllabus_node.unique_id} and {year_group_syllabus_node.unique_id}")
+                last_year_group_syllabus_node = year_group_syllabus_node
+                
+                # Create relationships in both databases using MATCH to avoid cartesian products
+                subject_node = node_library['subject_nodes'].get(yg_row['SubjectCode'])
+                if subject_node:
+                    # Link to subject
+                    neon.create_or_merge_neontology_relationship(
+                        curricular_relationships.SubjectHasYearGroupSyllabus(source=subject_node, target=year_group_syllabus_node),
+                        database=db_name, operation='merge'
+                    )
+                    neon.create_or_merge_neontology_relationship(
+                        curricular_relationships.SubjectHasYearGroupSyllabus(source=subject_node, target=year_group_syllabus_node),
+                        database=curriculum_db_name, operation='merge'
+                    )
+                    logging.info(f"Created relationship between subject {subject_node.unique_id} and year group syllabus {year_group_syllabus_node_unique_id}")
+                
+                # Link to year group
                 neon.create_or_merge_neontology_relationship(
                     curricular_relationships.YearGroupHasYearGroupSyllabus(source=year_group_node, target=year_group_syllabus_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created relationship between year group {year_group_node_unique_id} and year group syllabus {year_group_syllabus_node_unique_id}")
-    
-    # Process topics, lessons, and statements
-    logging.info(f"Processing topics, lessons, and statements")
-    for index, topic_row in topic_df.iterrows():
-        logging.debug(f"Processing topic {topic_row['TopicID']}")
-        
-        yr_syllabus_node = node_library['year_group_syllabus_nodes'].get(topic_row['SyllabusYearID']) # TODO: This is hacky
-        logging.debug(f"Year group syllabus node: {yr_syllabus_node}")
-        
-        if yr_syllabus_node:
-            logging.debug(f"Creating topic node for topic {topic_row['TopicID']}")
-            _, topic_path = fs_handler.create_school_curriculum_topic_directory(curriculum_path, yr_syllabus_node.yr_syllabus_year_group, yr_syllabus_node.yr_syllabus_id, topic_row['TopicID'])
-            logging.info(f"Created topic directory for {topic_path}")
-            
-            topic_node_unique_id = f"Topic_{yr_syllabus_node.unique_id}_{topic_row['TopicID']}"
-            topic_node = neo_curriculum.TopicNode(
-                unique_id=topic_node_unique_id,
-                topic_id=topic_row['TopicID'],
-                topic_title=topic_row.get('TopicTitle', default_topic_values['topic_title']),
-                total_number_of_lessons_for_topic=str(topic_row.get('TotalNumberOfLessonsForTopic', default_topic_values['total_number_of_lessons_for_topic'])),
-                topic_type=topic_row.get('TopicType', default_topic_values['topic_type']),
-                topic_assessment_type=topic_row.get('TopicAssessmentType', default_topic_values['topic_assessment_type']),
-                path=topic_path
-            )
-            neon.create_or_merge_neontology_node(topic_node, database=db_name, operation='merge')
-            # Create the tldraw file for the node
-            fs_handler.create_default_tldraw_file(topic_node.path, topic_node.to_dict())
-            node_library['topic_nodes'][topic_row['TopicID']] = topic_node
-            neon.create_or_merge_neontology_relationship(
-                curricular_relationships.TopicPartOfYearGroupSyllabus(source=yr_syllabus_node, target=topic_node),
-                database=db_name, operation='merge'
-            )
-            logging.info(f"Created topic node {topic_node_unique_id} and relationship with year group syllabus {yr_syllabus_node.unique_id}")
-            # TODO: Create suggested sequence relationships between topics
-
-            lessons_df = lesson_df[lesson_df['TopicID'] == topic_row['TopicID']].copy()
-            lessons_df.loc[:, 'Lesson'] = lessons_df['Lesson'].astype(str)
-            lessons_df = lessons_df.sort_values('Lesson')
-
-            previous_lesson_node = None
-            for lesson_index, lesson_row in lessons_df.iterrows():
-                _, lesson_path = fs_handler.create_school_curriculum_lesson_directory(curriculum_path, yr_syllabus_node.yr_syllabus_year_group, yr_syllabus_node.yr_syllabus_id, topic_row['TopicID'], lesson_row['Lesson'])
-                logging.info(f"Created lesson directory for {lesson_path}")
-                lesson_data = {
-                    'unique_id': f"TopicLesson_{topic_node.unique_id}_{lesson_row['LessonID']}",
-                    'topic_lesson_id': lesson_row['LessonID'],
-                    'topic_lesson_title': lesson_row.get('LessonTitle', default_topic_lesson_values['topic_lesson_title']),
-                    'topic_lesson_type': lesson_row.get('LessonType', default_topic_lesson_values['topic_lesson_type']),
-                    'topic_lesson_length': str(lesson_row.get('SuggestedNumberOfPeriodsForLesson', default_topic_lesson_values['topic_lesson_length'])),
-                    'topic_lesson_suggested_activities': lesson_row.get('SuggestedActivities', default_topic_lesson_values['topic_lesson_suggested_activities']),
-                    'topic_lesson_skills_learned': lesson_row.get('SkillsLearned', default_topic_lesson_values['topic_lesson_skills_learned']),
-                    'topic_lesson_weblinks': lesson_row.get('WebLinks', default_topic_lesson_values['topic_lesson_weblinks']),
-                    'path': lesson_path
-                }
-                for key, value in lesson_data.items():
-                    if pd.isna(value):
-                        lesson_data[key] = default_topic_lesson_values[key]
-
-                lesson_node = neo_curriculum.TopicLessonNode(**lesson_data)
-                neon.create_or_merge_neontology_node(lesson_node, database=db_name, operation='merge')
-                # Create the tldraw file for the node
-                fs_handler.create_default_tldraw_file(lesson_node.path, lesson_node.to_dict())
-                node_library['topic_lesson_nodes'][lesson_row['LessonID']] = lesson_node
                 neon.create_or_merge_neontology_relationship(
-                    curricular_relationships.TopicIncludesTopicLesson(source=topic_node, target=lesson_node),
-                    database=db_name, operation='merge'
+                    curricular_relationships.YearGroupHasYearGroupSyllabus(source=year_group_node, target=year_group_syllabus_node),
+                    database=curriculum_db_name, operation='merge'
                 )
-                logging.info(f"Created lesson node {lesson_node.unique_id} and relationship with topic {topic_node.unique_id}")
+                logging.info(f"Created relationship between year group {year_group_node.unique_id} and year group syllabus {year_group_syllabus_node_unique_id}")
                 
-                # Create sequential relationships if the lesson number is a digit
-                # TODO: Handle non-digit lessons, e.g., R, F and T
-                if lesson_row['Lesson'].isdigit() and previous_lesson_node:
+                # Link to key stage syllabus if it exists for the same subject
+                key_stage_syllabus_node = node_library['key_stage_syllabus_nodes'].get(ks_row['ID'])
+                if key_stage_syllabus_node and yg_row['Subject'] == ks_row['Subject']:
                     neon.create_or_merge_neontology_relationship(
-                        curricular_relationships.TopicLessonFollowsTopicLesson(source=previous_lesson_node, target=lesson_node),
+                        curricular_relationships.KeyStageSyllabusIncludesYearGroupSyllabus(source=key_stage_syllabus_node, target=year_group_syllabus_node),
                         database=db_name, operation='merge'
                     )
-                    logging.info(f"Created relationship between lesson {previous_lesson_node.unique_id} and {lesson_node.unique_id}")
-                previous_lesson_node = lesson_node
-
-                # Process each learning statement related to the lesson
-                for statement_index, statement_row in statement_df[statement_df['LessonID'] == lesson_row['LessonID']].iterrows():
-                    _, statement_path = fs_handler.create_school_curriculum_lesson_learning_statement_directory(curriculum_path, yr_syllabus_node.yr_syllabus_year_group, yr_syllabus_node.yr_syllabus_id, topic_row['TopicID'], lesson_row['Lesson'], statement_row['StatementID'])
-                    statement_data = {
-                        'unique_id': f"LearningStatement_{lesson_node.unique_id}_{statement_row['StatementID']}",
-                        'lesson_learning_statement_id': statement_row['StatementID'],
-                        'lesson_learning_statement': statement_row.get('LearningStatement', default_learning_statement_values['lesson_learning_statement']),
-                        'lesson_learning_statement_type': statement_row.get('StatementType', default_learning_statement_values['lesson_learning_statement_type']),
-                        'path': statement_path
-                    }
-                    for key in statement_data:
-                        if pd.isna(statement_data[key]):
-                            statement_data[key] = default_learning_statement_values[key]
-
-                    statement_node = neo_curriculum.LearningStatementNode(**statement_data)
-                    neon.create_or_merge_neontology_node(statement_node, database=db_name, operation='merge')
-                    # Create the tldraw file for the node
-                    fs_handler.create_default_tldraw_file(statement_node.path, statement_node.to_dict())
-                    node_library['statement_nodes'][statement_row['StatementID']] = statement_node
                     neon.create_or_merge_neontology_relationship(
-                        curricular_relationships.LessonIncludesLearningStatement(source=lesson_node, target=statement_node),
-                        database=db_name, operation='merge'
+                        curricular_relationships.KeyStageSyllabusIncludesYearGroupSyllabus(source=key_stage_syllabus_node, target=year_group_syllabus_node),
+                        database=curriculum_db_name, operation='merge'
                     )
-                    logging.info(f"Created learning statement node {statement_node.unique_id} and relationship with lesson {lesson_node.unique_id}")
-                # TODO: Lesson has Science Lab
+                    logging.info(f"Created relationship between key stage syllabus {key_stage_syllabus_node.unique_id} and year group syllabus {year_group_syllabus_node_unique_id}")
+
+                # Process topics for this year group syllabus only if not already processed
+                topics_for_syllabus = topic_df[topic_df['SyllabusYearID'] == yg_row['ID']]
+                for _, topic_row in topics_for_syllabus.iterrows():
+                    if topic_row['TopicID'] in topics_processed:
+                        continue
+                    topics_processed.add(topic_row['TopicID'])
+                    
+                    # Create topic under key stage syllabus instead of year group syllabus
+                    key_stage_syllabus_node = node_library['key_stage_syllabus_nodes'].get(ks_row['ID'])
+                    if not key_stage_syllabus_node:
+                        logging.warning(f"No key stage syllabus node found for ID {ks_row['ID']}, skipping topic creation")
+                        continue
+                        
+                    _, topic_path = fs_handler.create_curriculum_topic_directory(key_stage_syllabus_node.path, topic_row['TopicID'])
+                    logging.info(f"Created topic directory for {topic_path}")
+                    
+                    topic_node_unique_id = f"Topic_{key_stage_syllabus_node.unique_id}_{topic_row['TopicID']}"
+                    topic_node = neo_curriculum.TopicNode(
+                        unique_id=topic_node_unique_id,
+                        topic_id=topic_row['TopicID'],
+                        topic_title=topic_row.get('TopicTitle', default_topic_values['topic_title']),
+                        total_number_of_lessons_for_topic=str(topic_row.get('TotalNumberOfLessonsForTopic', default_topic_values['total_number_of_lessons_for_topic'])),
+                        topic_type=topic_row.get('TopicType', default_topic_values['topic_type']),
+                        topic_assessment_type=topic_row.get('TopicAssessmentType', default_topic_values['topic_assessment_type']),
+                        path=topic_path
+                    )
+                    # Create topic node in curriculum database only
+                    neon.create_or_merge_neontology_node(topic_node, database=curriculum_db_name, operation='merge')
+                    fs_handler.create_default_tldraw_file(topic_node.path, topic_node.to_dict())
+                    node_library['topic_nodes'][topic_row['TopicID']] = topic_node
+                    
+                    # Link topic to key stage syllabus as well as year group syllabus
+                    neon.create_or_merge_neontology_relationship(
+                        curricular_relationships.KeyStageSyllabusIncludesTopic(source=key_stage_syllabus_node, target=topic_node),
+                        database=curriculum_db_name, operation='merge'
+                    )
+                    neon.create_or_merge_neontology_relationship(
+                        curricular_relationships.YearGroupSyllabusIncludesTopic(source=year_group_syllabus_node, target=topic_node),
+                        database=curriculum_db_name, operation='merge'
+                    )
+                    logging.info(f"Created relationships between topic {topic_node_unique_id} and key stage syllabus {key_stage_syllabus_node.unique_id} and year group syllabus {year_group_syllabus_node_unique_id}")
+
+                    # Process lessons for this topic only if not already processed
+                    lessons_for_topic = lesson_df[lesson_df['TopicID'] == topic_row['TopicID']].copy()
+                    lessons_for_topic.loc[:, 'Lesson'] = lessons_for_topic['Lesson'].astype(str)
+                    lessons_for_topic = lessons_for_topic.sort_values('Lesson')
+
+                    previous_lesson_node = None
+                    for _, lesson_row in lessons_for_topic.iterrows():
+                        if lesson_row['LessonID'] in lessons_processed:
+                            continue
+                        lessons_processed.add(lesson_row['LessonID'])
+                        
+                        _, lesson_path = fs_handler.create_curriculum_lesson_directory(topic_path, lesson_row['LessonID'])
+                        logging.info(f"Created lesson directory for {lesson_path}")
+                        
+                        lesson_data = {
+                            'unique_id': f"TopicLesson_{topic_node_unique_id}_{lesson_row['LessonID']}",
+                            'topic_lesson_id': lesson_row['LessonID'],
+                            'topic_lesson_title': lesson_row.get('LessonTitle', default_topic_lesson_values['topic_lesson_title']),
+                            'topic_lesson_type': lesson_row.get('LessonType', default_topic_lesson_values['topic_lesson_type']),
+                            'topic_lesson_length': str(lesson_row.get('SuggestedNumberOfPeriodsForLesson', default_topic_lesson_values['topic_lesson_length'])),
+                            'topic_lesson_suggested_activities': lesson_row.get('SuggestedActivities', default_topic_lesson_values['topic_lesson_suggested_activities']),
+                            'topic_lesson_skills_learned': lesson_row.get('SkillsLearned', default_topic_lesson_values['topic_lesson_skills_learned']),
+                            'topic_lesson_weblinks': lesson_row.get('WebLinks', default_topic_lesson_values['topic_lesson_weblinks']),
+                            'path': lesson_path
+                        }
+                        for key, value in lesson_data.items():
+                            if pd.isna(value):
+                                lesson_data[key] = default_topic_lesson_values.get(key, 'Null')
+
+                        lesson_node = neo_curriculum.TopicLessonNode(**lesson_data)
+                        # Create lesson node in curriculum database only
+                        neon.create_or_merge_neontology_node(lesson_node, database=curriculum_db_name, operation='merge')
+                        fs_handler.create_default_tldraw_file(lesson_node.path, lesson_node.to_dict())
+                        node_library['topic_lesson_nodes'][lesson_row['LessonID']] = lesson_node
+                        
+                        # Link lesson to topic
+                        neon.create_or_merge_neontology_relationship(
+                            curricular_relationships.TopicIncludesTopicLesson(source=topic_node, target=lesson_node),
+                            database=curriculum_db_name, operation='merge'
+                        )
+                        logging.info(f"Created lesson node {lesson_node.unique_id} and relationship with topic {topic_node.unique_id}")
+
+                        # Create sequential relationships between lessons
+                        if lesson_row['Lesson'].isdigit() and previous_lesson_node:
+                            neon.create_or_merge_neontology_relationship(
+                                curricular_relationships.TopicLessonFollowsTopicLesson(source=previous_lesson_node, target=lesson_node),
+                                database=curriculum_db_name, operation='merge'
+                            )
+                            logging.info(f"Created sequential relationship between lessons {previous_lesson_node.unique_id} and {lesson_node.unique_id}")
+                        previous_lesson_node = lesson_node
+
+                        # Process learning statements for this lesson only if not already processed
+                        statements_for_lesson = statement_df[statement_df['LessonID'] == lesson_row['LessonID']]
+                        for _, statement_row in statements_for_lesson.iterrows():
+                            if statement_row['StatementID'] in statements_processed:
+                                continue
+                            statements_processed.add(statement_row['StatementID'])
+                            
+                            _, statement_path = fs_handler.create_curriculum_learning_statement_directory(lesson_path, statement_row['StatementID'])
+                            
+                            statement_data = {
+                                'unique_id': f"LearningStatement_{lesson_node.unique_id}_{statement_row['StatementID']}",
+                                'lesson_learning_statement_id': statement_row['StatementID'],
+                                'lesson_learning_statement': statement_row.get('LearningStatement', default_learning_statement_values['lesson_learning_statement']),
+                                'lesson_learning_statement_type': statement_row.get('StatementType', default_learning_statement_values['lesson_learning_statement_type']),
+                                'path': statement_path
+                            }
+                            for key in statement_data:
+                                if pd.isna(statement_data[key]):
+                                    statement_data[key] = default_learning_statement_values.get(key, 'Null')
+
+                            statement_node = neo_curriculum.LearningStatementNode(**statement_data)
+                            # Create statement node in curriculum database only
+                            neon.create_or_merge_neontology_node(statement_node, database=curriculum_db_name, operation='merge')
+                            fs_handler.create_default_tldraw_file(statement_node.path, statement_node.to_dict())
+                            node_library['statement_nodes'][statement_row['StatementID']] = statement_node
+                            
+                            # Link learning statement to lesson
+                            neon.create_or_merge_neontology_relationship(
+                                curricular_relationships.LessonIncludesLearningStatement(source=lesson_node, target=statement_node),
+                                database=curriculum_db_name, operation='merge'
+                            )
+                            logging.info(f"Created learning statement node {statement_node.unique_id} and relationship with lesson {lesson_node.unique_id}")
+            else:
+                logging.warning(f"No year group node found for year group {year_group}, skipping syllabus creation")
+    
     return node_library

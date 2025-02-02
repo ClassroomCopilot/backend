@@ -18,9 +18,10 @@ import modules.database.tools.neo4j_driver_tools as driver
 from modules.database.tools.neo4j_session_tools import get_node_by_unique_id
 import modules.database.init.init_school_timetable as init_school_timetable
 import modules.database.init.init_worker_timetable as init_worker_timetable
-from modules.database.schemas.entity_neo import SchoolNode
+from modules.database.schemas.entity_neo import SchoolNode, UserNode, TeacherNode
 import modules.database.init.xl_tools as xl
 import json
+import modules.database.tools.neontology_tools as neon
 
 router = APIRouter()
 
@@ -51,6 +52,7 @@ async def upload_school_timetable(
 async def upload_worker_timetable(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    user_node: str = Form(...),
     worker_node: str = Form(...)
 ):
     if file.content_type != 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
@@ -58,9 +60,11 @@ async def upload_worker_timetable(
     
     try:
         worker_node_data = json.loads(worker_node)
+        user_node_data = json.loads(user_node)
         logging.info(f"Uploading worker timetable for {worker_node_data['teacher_code']} from {file.filename} for {worker_node_data['worker_db_name']}")
         logging.debug(f"Worker node data: {worker_node_data}")
-        
+        logging.debug(f"User node data: {user_node_data}")
+
         # Read file content into memory
         file_content = await file.read()
         
@@ -68,6 +72,7 @@ async def upload_worker_timetable(
         background_tasks.add_task(
             process_worker_timetable,
             file_content,
+            user_node_data,
             worker_node_data
         )
         
@@ -79,7 +84,10 @@ async def upload_worker_timetable(
         logging.error(f"Error handling timetable upload: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def process_worker_timetable(file_content, worker_node_data):
+async def process_worker_timetable(file_content, user_node_data, worker_node_data):
+    # Initialize neontology connection first
+    neon.init_neontology_connection()
+    
     neo_driver = driver.get_driver(db_name=worker_node_data['worker_db_name'])
     if neo_driver is None:
         logging.error(f"Failed to connect to the database {worker_node_data['worker_db_name']}")
@@ -103,9 +111,50 @@ async def process_worker_timetable(file_content, worker_node_data):
                 
             logging.debug(f"School worker node found: {school_worker_node}")
             
+            # Create timetable in school database
             logging.info(f"Initializing worker timetable for school worker: {school_worker_node['teacher_code']}")
-            init_worker_timetable.init_worker_timetable(timetable_df, school_worker_node)
+            # init_worker_timetable.init_worker_timetable(timetable_df, school_worker_node)
             logging.info(f"Worker timetable initialized for school worker: {school_worker_node['teacher_code']}")
+            
+            # Create timetable in user database
+            if 'user_db_name' in worker_node_data:
+                from modules.database.init.init_user_timetable import create_user_worker_timetable
+                from modules.database.schemas.entity_neo import TeacherNode
+                
+                logging.info(f"Creating user timetable structure in {worker_node_data['user_db_name']}")
+                
+                # Create TeacherNode from worker_node_data
+                user_worker_node = TeacherNode(
+                    unique_id=worker_node_data['unique_id'],
+                    teacher_code=worker_node_data['teacher_code'],
+                    teacher_name_formal=worker_node_data['teacher_name_formal'],
+                    teacher_email=worker_node_data['teacher_email'],
+                    path=worker_node_data['path'],
+                    worker_db_name=worker_node_data['worker_db_name'],
+                    user_db_name=worker_node_data['user_db_name']
+                )
+                
+                # Create user node
+                user_node = UserNode(
+                    unique_id=user_node_data['unique_id'],
+                    user_id=user_node_data['user_id'],
+                    user_type=user_node_data['user_type'],
+                    user_name=user_node_data['user_name'],
+                    user_email=user_node_data['user_email'],
+                    path=user_node_data['path'],
+                    worker_node_data=user_node_data['worker_node_data']
+                )
+                
+                # Create user timetable structure
+                create_user_worker_timetable(
+                    user_node=user_node,
+                    user_worker_node=user_worker_node,
+                    school_db_name=worker_node_data['worker_db_name']
+                )
+
+                logging.info(f"User timetable structure created in {worker_node_data['user_db_name']}")
+            else:
+                logging.warning("No user_db_name provided, skipping user timetable creation")
             
     except Exception as e:
         logging.error(f"Error processing worker timetable: {str(e)}")

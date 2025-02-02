@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, Optional
 from modules.database.tools.neontology.basenode import BaseNode
 
 # Neo4j Nodes and relationships using Neontology
@@ -107,6 +107,21 @@ class SchoolNode(BaseNode):
             "merged": self.merged.isoformat() if self.merged else None,
         }
 
+class DepartmentStructureNode(BaseNode):
+    __primarylabel__: ClassVar[str] = 'DepartmentStructure'
+    __primaryproperty__: ClassVar[str] = 'unique_id'
+    unique_id: str
+    path: Optional[str] = None
+    
+    def to_dict(self):
+        return {
+            "__primarylabel__": self.__primarylabel__,
+            "unique_id": self.unique_id,
+            "path": self.path,
+            "created": self.created.isoformat() if self.created else None,
+            "merged": self.merged.isoformat() if self.merged else None,
+        }
+        
 class DepartmentNode(BaseNode):
     __primarylabel__: ClassVar[str] = 'Department'
     __primaryproperty__: ClassVar[str] = 'unique_id'
@@ -133,6 +148,7 @@ class TeacherNode(BaseNode):
     teacher_email: str
     path: str
     worker_db_name: str
+    user_db_name: str
     
     def to_dict(self):
         return {
@@ -143,6 +159,7 @@ class TeacherNode(BaseNode):
             "teacher_email": self.teacher_email,
             "path": self.path,
             "worker_db_name": self.worker_db_name,
+            "user_db_name": self.user_db_name,
             "created": self.created.isoformat() if self.created else None,
             "merged": self.merged.isoformat() if self.merged else None,
         }
@@ -156,7 +173,7 @@ class StudentNode(BaseNode):
     student_email: str
     path: str
     worker_db_name: str
-    
+    user_db_name: str
     def to_dict(self):
         return {
             "__primarylabel__": self.__primarylabel__,
@@ -166,6 +183,7 @@ class StudentNode(BaseNode):
             "student_email": self.student_email,
             "path": self.path,
             "worker_db_name": self.worker_db_name,
+            "user_db_name": self.user_db_name,
             "created": self.created.isoformat() if self.created else None,
             "merged": self.merged.isoformat() if self.merged else None,
         }
