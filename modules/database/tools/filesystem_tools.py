@@ -220,24 +220,28 @@ class ClassroomCopilotFilesystem:
         department_path = os.path.join(school_path, "departments", f"{department}")
         return self.create_directory(department_path), department_path
     
-    def create_department_subject_directory(self, department_path, subject_code):
+    def create_department_subject_directory(self, department_path, subject_name):
         """Create a directory for a specific subject within a department."""
-        subject_path = os.path.join(department_path, "subjects", f"{subject_code}")
+        subject_path = os.path.join(department_path, "subjects", f"{subject_name}")
         return self.create_directory(subject_path), subject_path
         
-    def create_curriculum_key_stage_syllabus_directory(self, curriculum_path, key_stage, subject_code, syllabus_id):
+    def create_curriculum_key_stage_syllabus_directory(self, curriculum_path, key_stage, subject_name, syllabus_id):
         """Create a directory for a specific key stage syllabus under the curriculum structure."""
-        syllabus_path = os.path.join(curriculum_path, "subjects", subject_code, "key_stage_syllabuses", f"KS{key_stage}", f"{syllabus_id}")
+        # Replace spaces with underscores and remove any special characters from subject name
+        safe_subject_name = re.sub(r'[^\w\-_\.]', '_', subject_name)
+        syllabus_path = os.path.join(curriculum_path, "subjects", safe_subject_name, "key_stage_syllabuses", f"KS{key_stage}", f"KS{key_stage}.{safe_subject_name}")
         return self.create_directory(syllabus_path), syllabus_path
 
     def create_pastoral_year_group_directory(self, pastoral_path, year_group):
         """Create a directory for a specific year group under the pastoral structure."""
-        year_group_path = os.path.join(pastoral_path, "year_groups", f"{year_group}")
+        year_group_path = os.path.join(pastoral_path, "year_groups", f"Y{year_group}")
         return self.create_directory(year_group_path), year_group_path
         
-    def create_curriculum_year_group_syllabus_directory(self, curriculum_path, subject_code, year_group, syllabus_id):
+    def create_curriculum_year_group_syllabus_directory(self, curriculum_path, subject_name, year_group, syllabus_id):
         """Create a directory for a specific year group syllabus under the curriculum structure."""
-        syllabus_path = os.path.join(curriculum_path, "subjects", subject_code, "year_group_syllabuses", f"Y{year_group}", f"{syllabus_id}")
+        # Replace spaces with underscores and remove any special characters from subject name
+        safe_subject_name = re.sub(r'[^\w\-_\.]', '_', subject_name)
+        syllabus_path = os.path.join(curriculum_path, "subjects", safe_subject_name, "year_group_syllabuses", f"Y{year_group}", f"Y{year_group}.{safe_subject_name}")
         return self.create_directory(syllabus_path), syllabus_path
         
     def create_curriculum_topic_directory(self, year_group_syllabus_path, topic_id):

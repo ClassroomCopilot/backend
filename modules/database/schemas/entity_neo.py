@@ -217,7 +217,7 @@ class RoomNode(BaseNode):
     unique_id: str
     room_code: str
     path: str
-    
+
     def to_dict(self):
         return {
             "__primarylabel__": self.__primarylabel__,
