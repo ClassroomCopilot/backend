@@ -248,16 +248,19 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
     # Process key stages and syllabuses
     logging.info(f"Processing key stages")
     last_key_stage_node = None
-    last_key_stage_syllabus_node = None
+    # Track last syllabus nodes per subject
+    last_key_stage_syllabus_nodes = {}  # Dictionary to track last key stage syllabus node per subject
+    last_year_group_syllabus_nodes = {}  # Dictionary to track last year group syllabus node per subject
     topics_processed = set()  # Track which topics have been processed
     lessons_processed = set()  # Track which lessons have been processed
     statements_processed = set()  # Track which statements have been processed
     
     for index, ks_row in keystagesyllabus_df.sort_values('KeyStage').iterrows():
         key_stage = str(ks_row['KeyStage'])
-        subject_node = node_library['subject_nodes'].get(ks_row['SubjectCode'])
+        subject_code = ks_row['SubjectCode']
+        subject_node = node_library['subject_nodes'].get(subject_code)
         if not subject_node:
-            logging.warning(f"No subject node found for subject code {ks_row['SubjectCode']}")
+            logging.warning(f"No subject node found for subject code {subject_code}")
             continue
             
         if key_stage not in key_stage_nodes_created:
@@ -299,7 +302,7 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
         _, key_stage_syllabus_path = fs_handler.create_curriculum_key_stage_syllabus_directory(
             curriculum_node.path,
             key_stage,
-            ks_row['SubjectCode'],
+            subject_code,
             ks_row['ID']
         )
         logging.info(f"Created key stage syllabus directory for {key_stage_syllabus_path}")
@@ -311,7 +314,7 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
             ks_syllabus_name=ks_row['Title'],
             ks_syllabus_key_stage=str(ks_row['KeyStage']),
             ks_syllabus_subject=ks_row['Subject'],
-            ks_syllabus_subject_code=ks_row['SubjectCode'],
+            ks_syllabus_subject_code=subject_code,
             path=key_stage_syllabus_path
         )
         # Create key stage syllabus node in both databases
@@ -320,8 +323,24 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
         fs_handler.create_default_tldraw_file(key_stage_syllabus_node.path, key_stage_syllabus_node.to_dict())
         node_library['key_stage_syllabus_nodes'][ks_row['ID']] = key_stage_syllabus_node
         
+        # Link key stage syllabus to its key stage in both databases
+        key_stage_node = key_stage_nodes_created.get(key_stage)
+        if key_stage_node:
+            neon.create_or_merge_neontology_relationship(
+                curricular_relationships.KeyStageIncludesKeyStageSyllabus(source=key_stage_node, target=key_stage_syllabus_node),
+                database=db_name, operation='merge'
+            )
+            neon.create_or_merge_neontology_relationship(
+                curricular_relationships.KeyStageIncludesKeyStageSyllabus(source=key_stage_node, target=key_stage_syllabus_node),
+                database=curriculum_db_name, operation='merge'
+            )
+            logging.info(f"Created relationship between key stage {key_stage_node.unique_id} and key stage syllabus {key_stage_syllabus_node.unique_id}")
+        else:
+            logging.warning(f"No key stage node found for key stage {key_stage}, skipping relationship creation")
+        
         # Create sequential relationship between key stage syllabuses in both databases
-        if last_key_stage_syllabus_node and last_key_stage_syllabus_node.ks_syllabus_subject_code == key_stage_syllabus_node.ks_syllabus_subject_code:
+        last_key_stage_syllabus_node = last_key_stage_syllabus_nodes.get(subject_code)
+        if last_key_stage_syllabus_node:
             neon.create_or_merge_neontology_relationship(
                 curricular_relationships.KeyStageSyllabusFollowsKeyStageSyllabus(source=last_key_stage_syllabus_node, target=key_stage_syllabus_node),
                 database=db_name, operation='merge'
@@ -331,15 +350,15 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
                 database=curriculum_db_name, operation='merge'
             )
             logging.info(f"Created sequential relationship between key stage syllabuses {last_key_stage_syllabus_node.unique_id} and {key_stage_syllabus_node.unique_id}")
-        last_key_stage_syllabus_node = key_stage_syllabus_node
+        last_key_stage_syllabus_nodes[subject_code] = key_stage_syllabus_node
 
         # Process year groups and their syllabuses
         related_yeargroups = sort_year_groups(yeargroupsyllabus_df[yeargroupsyllabus_df['KeyStage'] == ks_row['KeyStage']])
         
         logging.info(f"Processing year groups for key stage {key_stage}")
-        last_year_group_syllabus_node = None
         for yg_index, yg_row in related_yeargroups.iterrows():
             year_group = yg_row['YearGroup']
+            subject_code = yg_row['SubjectCode']
             numeric_year_group = pd.to_numeric(year_group, errors='coerce')
 
             if pd.notna(numeric_year_group):
@@ -390,7 +409,7 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
                 # Create syllabus directory under curriculum structure
                 _, year_group_syllabus_path = fs_handler.create_curriculum_year_group_syllabus_directory(
                     curriculum_node.path,
-                    yg_row['SubjectCode'],
+                    subject_code,
                     year_group,
                     yg_row['ID']
                 )
@@ -403,7 +422,7 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
                     yr_syllabus_name=yg_row['Title'],
                     yr_syllabus_year_group=str(yg_row['YearGroup']),
                     yr_syllabus_subject=yg_row['Subject'],
-                    yr_syllabus_subject_code=yg_row['SubjectCode'],
+                    yr_syllabus_subject_code=subject_code,
                     path=year_group_syllabus_path
                 )
                 
@@ -414,7 +433,8 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
                 node_library['year_group_syllabus_nodes'][yg_row['ID']] = year_group_syllabus_node
                 
                 # Create sequential relationship between year group syllabuses in both databases
-                if last_year_group_syllabus_node and last_year_group_syllabus_node.yr_syllabus_subject_code == year_group_syllabus_node.yr_syllabus_subject_code:
+                last_year_group_syllabus_node = last_year_group_syllabus_nodes.get(subject_code)
+                if last_year_group_syllabus_node:
                     neon.create_or_merge_neontology_relationship(
                         curricular_relationships.YearGroupSyllabusFollowsYearGroupSyllabus(source=last_year_group_syllabus_node, target=year_group_syllabus_node),
                         database=db_name, operation='merge'
@@ -424,10 +444,10 @@ def create_curriculum(dataframes, db_name, curriculum_db_name, school_node):
                         database=curriculum_db_name, operation='merge'
                     )
                     logging.info(f"Created sequential relationship between year group syllabuses {last_year_group_syllabus_node.unique_id} and {year_group_syllabus_node.unique_id}")
-                last_year_group_syllabus_node = year_group_syllabus_node
+                last_year_group_syllabus_nodes[subject_code] = year_group_syllabus_node
                 
                 # Create relationships in both databases using MATCH to avoid cartesian products
-                subject_node = node_library['subject_nodes'].get(yg_row['SubjectCode'])
+                subject_node = node_library['subject_nodes'].get(subject_code)
                 if subject_node:
                     # Link to subject
                     neon.create_or_merge_neontology_relationship(

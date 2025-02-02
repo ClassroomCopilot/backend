@@ -85,7 +85,6 @@ class TopicLessonIncludesScienceLab(BaseRelationship):
     source: neo_curriculum.TopicLessonNode
     target: neo_curriculum.ScienceLabNode
     
-
 class KeyStageFollowsKeyStage(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'KEY_STAGE_FOLLOWS_KEY_STAGE'
     source: neo_curriculum.KeyStageNode
