@@ -86,7 +86,11 @@ def create_calendar(db_name, start_date, end_date, attach_to_calendar_node=False
         calendar_nodes['calendar_node'] = calendar_node
         logging.info(f"Calendar node created: {calendar_node.unique_id}")
         
+        # Create a node tldraw file for the calendar node
+        create_tldraw_file_for_node(calendar_node, calendar_path)
+        
         import modules.database.schemas.relationships.entity_calendar_rels as entity_cal_rels
+
         neon.create_or_merge_neontology_relationship(
             entity_cal_rels.EntityHasCalendar(source=entity_node, target=calendar_node),
             database=db_name,

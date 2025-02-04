@@ -17,10 +17,62 @@ import modules.database.tools.neo4j_session_tools as session
 from modules.database.schemas.calendar_neo import CalendarNode
 from modules.database.schemas.timetable_neo import SchoolTimetableNode, AcademicYearNode, AcademicTermNode, AcademicWeekNode, AcademicDayNode, AcademicPeriodNode, RegistrationPeriodNode
 from modules.database.schemas.entity_neo import UserNode, StandardUserNode, DeveloperNode, SchoolAdminNode, SchoolNode, DepartmentNode, TeacherNode, StudentNode, SubjectClassNode, RoomNode
-from modules.database.schemas.teacher_timetable_neo import TeacherTimetableNode, TimetableLessonNode, PlannedLessonNode
+from modules.database.schemas.teacher_timetable_neo import TeacherTimetableNode, TimetableLessonNode, PlannedLessonNode, UserTeacherTimetableNode
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter()
+
+@router.get("/get-node")
+async def get_node(unique_id: str = Query(...), db_name: str = Query(...)):
+    logging.info(f"Getting node for {unique_id} from database {db_name}")
+    neo_driver = driver.get_driver(db_name=db_name)
+    if neo_driver is None:
+        return {"status": "error", "message": "Failed to connect to the database"}
+    try:
+        with neo_driver.session(database=db_name) as neo_session:
+            query = """
+            MATCH (n {unique_id: $unique_id})
+            RETURN n
+            """
+            result = neo_session.run(query, unique_id=unique_id)
+            record = result.single()
+            
+            if record:
+                node = record['n']
+                node_labels = list(node.labels)
+                node_data = dict(node)
+                
+                try:
+                    # Convert node based on its type
+                    node_type = node_labels[0] if node_labels else "Unknown"
+                    if node_type in globals():
+                        node_class = globals()[f"{node_type}Node"]
+                        node_object = node_class(**node_data)
+                        node_dict = node_object.to_dict()
+                    else:
+                        node_dict = node_data
+                    
+                    return {
+                        "status": "success",
+                        "node": {
+                            "node_type": node_type,
+                            "node_data": node_dict
+                        }
+                    }
+                except Exception as e:
+                    logging.error(f"Error converting node to dict: {str(e)}")
+                    return {
+                        "status": "error",
+                        "message": "Error processing node data",
+                        "details": str(e)
+                    }
+            else:
+                return {"status": "not_found", "message": "Node not found"}
+    except Exception as e:
+        logging.error(f"Error retrieving node: {str(e)}")
+        return {"status": "error", "message": "Internal server error"}
+    finally:
+        driver.close_driver(neo_driver)
 
 @router.get("/get-user-node")
 async def get_user_node(user_id: str = Query(...)):
@@ -162,6 +214,9 @@ async def get_user_connected_nodes(unique_id: str = Query(...)):
                         elif 'TeacherTimetable' == label:
                             logging.debug(f"TeacherTimetable node found")
                             node_object = TeacherTimetableNode(**node_data)
+                        elif 'UserTeacherTimetable' == label:
+                            logging.debug(f"UserTeacherTimetable node found")
+                            node_object = UserTeacherTimetableNode(**node_data)
                         elif 'School' == label:
                             logging.debug(f"School node found")
                             node_object = SchoolNode(**node_data)
@@ -227,6 +282,9 @@ async def get_worker_connected_nodes(unique_id: str = Query(...)):
                         elif 'TeacherTimetable' == label:
                             logging.debug(f"TeacherTimetable node found")
                             node_object = TeacherTimetableNode(**node_data)
+                        elif 'UserTeacherTimetable' == label:
+                            logging.debug(f"UserTeacherTimetable node found")
+                            node_object = UserTeacherTimetableNode(**node_data)
                         elif 'School' == label:
                             logging.debug(f"School node found")
                             node_object = SchoolNode(**node_data)
