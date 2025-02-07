@@ -1,7 +1,7 @@
 from typing import ClassVar, Union
 from modules.database.tools.neontology.baserelationship import BaseRelationship
 from modules.database.schemas.timetable_neo import AcademicPeriodNode, RegistrationPeriodNode
-from modules.database.schemas.teacher_timetable_neo import TeacherTimetableNode, TimetableLessonNode, PlannedLessonNode
+from modules.database.schemas.teacher_timetable_neo import TeacherTimetableNode, TimetableLessonNode, PlannedLessonNode, UserTimetableLessonNode
 from modules.database.schemas.entity_neo import UserNode, TeacherNode, SubjectClassNode
 from modules.database.schemas.curriculum_neo import YearGroupSyllabusNode
 
@@ -32,9 +32,10 @@ class ClassHasLesson(BaseRelationship):
 
 class TimetableLessonFollowsTimetableLesson(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'TIMETABLE_LESSON_FOLLOWS_TIMETABLE_LESSON'
-    source: TimetableLessonNode
-    target: TimetableLessonNode
+    source: Union[TimetableLessonNode, PlannedLessonNode, UserTimetableLessonNode]
+    target: Union[TimetableLessonNode, PlannedLessonNode, UserTimetableLessonNode]
     
+
 class PlannedLessonFollowsPlannedLesson(BaseRelationship):
     __relationshiptype__: ClassVar[str] = 'PLANNED_LESSON_FOLLOWS_PLANNED_LESSON'
     source: PlannedLessonNode

@@ -25,8 +25,7 @@ from modules.database.schemas.relationships.entity_timetable_rels import (
     EntityHasTimetable
 )
 from modules.database.schemas.relationships.planning_relationships import (
-    TeacherHasTimetable, TimetableHasClass, ClassHasLesson,
-    TimetableLessonHasPlannedLesson
+    TeacherHasTimetable, TimetableHasClass, ClassHasLesson,TimetableLessonFollowsTimetableLesson
 )
 from modules.database.schemas.relationships.calendar_timetable_rels import (
     CalendarDayHasTimetableLesson, TimetableLessonBelongsToCalendarDay,
@@ -157,7 +156,9 @@ def create_user_worker_timetable(
     
     # Initialize filesystem and Neo4j
     fs_handler = ClassroomCopilotFilesystem(db_name=user_db_name, init_run_type="user")
-    _, worker_timetable_path = fs_handler.create_teacher_timetable_directory(user_node.path)
+    
+    # Create teacher timetable directory under the worker's directory
+    _, worker_timetable_path = fs_handler.create_teacher_timetable_directory(user_worker_node.path)
 
     # Initialize neontology connection
     neon.init_neontology_connection()
@@ -181,7 +182,7 @@ def create_user_worker_timetable(
             path=worker_timetable_path
         )
 
-        # Create the timetable node
+        # Create the timetable node and its tldraw file
         neon.create_or_merge_neontology_node(worker_timetable, database=user_db_name, operation='merge')
         fs_handler.create_default_tldraw_file(worker_timetable.path, worker_timetable.to_dict())
 
@@ -192,13 +193,6 @@ def create_user_worker_timetable(
             operation='merge'
         )
         
-        # Link timetable to user using the correct relationship structure
-        neon.create_or_merge_neontology_relationship(
-            EntityHasTimetable(source=user_node, target=worker_timetable),
-            database=user_db_name,
-            operation='merge'
-        )
-
         # Get classes from school database
         school_classes = get_school_worker_classes(school_db_name, user_node.unique_id, user_worker_node.unique_id)
         if not school_classes:
@@ -207,6 +201,9 @@ def create_user_worker_timetable(
                 "status": "warning",
                 "message": "No classes found in school database"
             }
+
+        # Dictionary to store lessons by class
+        class_lessons = {}
 
         for class_data in school_classes:
             class_name_safe = class_data['subject_class_code'].replace(' ', '_')
@@ -230,6 +227,9 @@ def create_user_worker_timetable(
                 database=user_db_name,
                 operation='merge'
             )
+
+            # Initialize empty list for this class's lessons
+            class_lessons[class_data['unique_id']] = []
 
             # Get periods from school database
             periods = get_school_class_periods(school_db_name, class_data['unique_id'])
@@ -278,7 +278,7 @@ def create_user_worker_timetable(
                         operation='merge'
                     )
 
-                    # Link lesson to calendar day
+                    # Link lesson to calendar day (keeping only one direction)
                     neon.create_or_merge_neontology_relationship(
                         CalendarDayHasTimetableLesson(
                             source=calendar_day,
@@ -288,66 +288,37 @@ def create_user_worker_timetable(
                         operation='merge'
                     )
 
-                    neon.create_or_merge_neontology_relationship(
-                        TimetableLessonBelongsToCalendarDay(
-                            source=timetable_lesson_node,
-                            target=calendar_day
-                        ),
-                        database=user_db_name,
-                        operation='merge'
-                    )
-
-                    # Create PlannedLessonNode
-                    planned_lesson_unique_id = f"PlannedLesson_{lesson_unique_id}"
-                    _, planned_lesson_path = fs_handler.create_teacher_planned_lesson_directory(
-                        class_path,
-                        f"{calendar_day.date}_{period_data['period_code']}"
-                    )
-
-                    planned_lesson_node = PlannedLessonNode(
-                        unique_id=planned_lesson_unique_id,
-                        date=period_data['date'],
-                        start_time=period_data['start_time'],
-                        end_time=period_data['end_time'],
-                        period_code=period_data['period_code'],
-                        subject_class=class_data['subject_class_code'],
-                        year_group=class_data['year_group'],
-                        subject=class_data['subject'],
-                        teacher_code=user_worker_node.teacher_code,
-                        planning_status="Unplanned",
-                        path=planned_lesson_path
-                    )
-
-                    neon.create_or_merge_neontology_node(planned_lesson_node, database=user_db_name, operation='merge')
-                    fs_handler.create_default_tldraw_file(planned_lesson_node.path, planned_lesson_node.to_dict())
-
-                    # Link planned lesson to timetable lesson
-                    neon.create_or_merge_neontology_relationship(
-                        TimetableLessonHasPlannedLesson(source=timetable_lesson_node, target=planned_lesson_node),
-                        database=user_db_name,
-                        operation='merge'
-                    )
-
-                    # Link planned lesson to calendar day
-                    neon.create_or_merge_neontology_relationship(
-                        CalendarDayHasPlannedLesson(
-                            source=calendar_day,
-                            target=planned_lesson_node
-                        ),
-                        database=user_db_name,
-                        operation='merge'
-                    )
-
-                    neon.create_or_merge_neontology_relationship(
-                        PlannedLessonBelongsToCalendarDay(
-                            source=planned_lesson_node,
-                            target=calendar_day
-                        ),
-                        database=user_db_name,
-                        operation='merge'
-                    )
+                    # Store the lesson node
+                    class_lessons[class_data['unique_id']].append({
+                        'node': timetable_lesson_node,
+                        'date': period_data['date'],
+                        'start_time': period_data['start_time']
+                    })
                 else:
                     logging.warning(f"No calendar day found for date {period_data['date']} - this is expected if the date is not in the current calendar year")
+
+        # Create sequential relationships for each class
+        for class_id, lessons in class_lessons.items():
+            # Sort lessons by date and start time
+            sorted_lessons = sorted(lessons, key=lambda x: (x['date'], x['start_time']))
+            
+            # Create relationships between consecutive lessons
+            for i in range(len(sorted_lessons) - 1):
+                current_lesson = sorted_lessons[i]['node']
+                next_lesson = sorted_lessons[i + 1]['node']
+                
+                # Skip if current and next lesson are the same node
+                if current_lesson.unique_id != next_lesson.unique_id:
+                    neon.create_or_merge_neontology_relationship(
+                        TimetableLessonFollowsTimetableLesson(
+                            source=current_lesson,
+                            target=next_lesson
+                        ),
+                        database=user_db_name,
+                        operation='merge'
+                    )
+            
+            logging.info(f"Created sequential relationships for class {class_id}")
 
         logging.info(f"Successfully created user timetable structure for {user_worker_node.teacher_code}")
         return {
