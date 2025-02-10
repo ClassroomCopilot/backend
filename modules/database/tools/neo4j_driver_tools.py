@@ -14,6 +14,7 @@ logging = logger.get_logger(
 )
 import time
 from neo4j import GraphDatabase as gd
+from contextlib import contextmanager
 
 def get_driver(db_name=None, url=None, auth=None):
     if url is None:
@@ -54,3 +55,28 @@ def get_driver(db_name=None, url=None, auth=None):
 def close_driver(driver):
     logging.info(f"Closing driver")
     driver.close()
+
+# Global driver instance
+_driver = None
+
+def get_global_driver():
+    """Get or create the global Neo4j driver instance."""
+    global _driver
+    if _driver is None:
+        _driver = get_driver()
+    return _driver
+
+@contextmanager
+def get_session(database=None):
+    """Get a Neo4j session using the global driver."""
+    driver = get_global_driver()
+    if driver is None:
+        raise Exception("Failed to get Neo4j driver")
+    
+    session = None
+    try:
+        session = driver.session(database=database)
+        yield session
+    finally:
+        if session:
+            session.close()
