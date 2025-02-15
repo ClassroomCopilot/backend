@@ -9,7 +9,7 @@ from routers.msgraph import router_onenote
 from routers.dev.tests import timetable_test
 from routers.database import admin
 from routers.database.init import entity_init, calendar, timetables, curriculum, get_data, schools
-from routers.database.tools import get_nodes, get_nodes_and_edges, tldraw_filesystem, reactflow_router, get_events, calendar_structure_router, default_nodes_router, worker_structure_router
+from routers.database.tools import get_nodes, get_nodes_and_edges, tldraw_filesystem, get_events, calendar_structure_router, default_nodes_router, worker_structure_router
 from routers.assets import powerpoint, word, pdf
 from routers.llm.private.ollama import ollama
 from routers.llm.public.openai import openai
@@ -35,7 +35,6 @@ def register_routes(app: FastAPI):
     app.include_router(get_nodes.router, prefix="/api/database/tools", tags=["Tools"])
     app.include_router(entity_init.router, prefix="/api/database/entity", tags=["Entity"])
     app.include_router(get_nodes_and_edges.router, prefix="/api/database/tools", tags=["Tools"])
-    app.include_router(reactflow_router.router, prefix="/api/database/tools", tags=["Tools"])
     app.include_router(calendar.router, prefix="/api/database/calendar", tags=["Calendar"])
     app.include_router(schools.router, prefix="/api/database/schools", tags=["Schools"])
     app.include_router(timetables.router, prefix="/api/database/timetables", tags=["Timetables"])
