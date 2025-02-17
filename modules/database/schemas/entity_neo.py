@@ -90,19 +90,37 @@ class SchoolNode(BaseNode):
     __primarylabel__: ClassVar[str] = 'School'
     __primaryproperty__: ClassVar[str] = 'unique_id'
     unique_id: str
-    school_uuid: str
-    school_name: str
-    school_website: str
     path: str
+    urn: str
+    establishment_number: str
+    establishment_name: str
+    establishment_type: str
+    establishment_status: str
+    phase_of_education: str
+    statutory_low_age: float
+    statutory_high_age: float
+    religious_character: Optional[str]
+    school_capacity: int
+    school_website: str
+    ofsted_rating: Optional[str]
     
     def to_dict(self):
         return {
             "__primarylabel__": self.__primarylabel__,
             "unique_id": self.unique_id,
-            "school_uuid": self.school_uuid,
-            "school_name": self.school_name,
-            "school_website": self.school_website,
             "path": self.path,
+            "urn": self.urn,
+            "establishment_number": self.establishment_number,
+            "establishment_name": self.establishment_name,
+            "establishment_type": self.establishment_type,
+            "establishment_status": self.establishment_status,
+            "phase_of_education": self.phase_of_education,
+            "statutory_low_age": self.statutory_low_age,
+            "statutory_high_age": self.statutory_high_age,
+            "religious_character": self.religious_character,
+            "school_capacity": self.school_capacity,
+            "school_website": self.school_website,
+            "ofsted_rating": self.ofsted_rating,
             "created": self.created.isoformat() if self.created else None,
             "merged": self.merged.isoformat() if self.merged else None,
         }

@@ -405,6 +405,8 @@ async def initialize_super_admin(admin_data: dict):
         expected_email = os.getenv("VITE_SUPER_ADMIN_EMAIL")
         is_dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
         
+        logger.debug(f"Initializing super admin with data: {admin_data}")
+        
         if not expected_email:
             raise HTTPException(status_code=400, detail="Super admin email not configured")
 
@@ -417,6 +419,12 @@ async def initialize_super_admin(admin_data: dict):
         if admin_data["email"] != expected_email:
             raise HTTPException(status_code=403, detail="Invalid super admin email")
 
+        # Ensure display_name is present
+        if "display_name" not in admin_data or not admin_data["display_name"]:
+            admin_data["display_name"] = "Super Admin"  # Default fallback
+        
+        logger.debug(f"Using display name: {admin_data['display_name']}")
+
         # Create the user with admin metadata
         user_data = {
             "email": admin_data["email"],
@@ -424,7 +432,8 @@ async def initialize_super_admin(admin_data: dict):
             "email_confirm": True,
             "user_metadata": {
                 "is_admin": True,
-                "is_super_admin": True
+                "is_super_admin": True,
+                "display_name": admin_data["display_name"]  # Add to metadata
             },
             "app_metadata": {
                 "roles": ["admin", "super_admin"]
@@ -434,6 +443,8 @@ async def initialize_super_admin(admin_data: dict):
         # Create the user using auth admin API
         auth_user = admin_supabase.auth.admin.create_user(user_data)
         user_id = auth_user.user.id
+
+        logger.debug(f"Created auth user with ID: {user_id}")
 
         # Create admin profile
         admin_profile = {
@@ -445,15 +456,24 @@ async def initialize_super_admin(admin_data: dict):
             "metadata": {}
         }
 
+        logger.debug(f"Creating admin profile with data: {admin_profile}")
+
         # Insert admin profile
         profile_result = admin_supabase.table("admin_profiles").insert(admin_profile).execute()
+        
+        logger.debug(f"Admin profile creation result: {profile_result.data}")
+
+        # Verify the profile was created correctly
+        created_profile = admin_supabase.table("admin_profiles").select("*").eq("id", user_id).single().execute()
+        logger.debug(f"Verified created profile: {created_profile.data}")
 
         # Prepare response
         response_data = {
             "status": "success",
             "message": "Super admin initialized successfully. Please log in.",
             "data": {
-                "email": admin_data["email"]
+                "email": admin_data["email"],
+                "display_name": admin_data["display_name"]
             }
         }
 

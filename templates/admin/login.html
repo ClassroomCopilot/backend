@@ -112,6 +112,7 @@ document.getElementById('initSuperAdminForm').addEventListener('submit', async f
     };
 
     try {
+        console.log('Sending form data:', JSON.stringify(formData));  // Add logging
         const response = await fetch('/api/admin/initialize-super-admin', {
             method: 'POST',
             headers: {
@@ -121,6 +122,7 @@ document.getElementById('initSuperAdminForm').addEventListener('submit', async f
         });
 
         const result = await response.json();
+        console.log('Received response:', result);  // Add logging
 
         if (response.ok) {
             // Show success message and redirect to login
