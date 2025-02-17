@@ -1,23 +1,31 @@
-FROM python:latest
+FROM python:3.11-slim
+
 WORKDIR /app/backend
 
-COPY requirements.txt .
-
-# Combine system dependencies installation and Python package installation
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libreoffice \
     poppler-utils \
-    && python -m venv /opt/venv \
-    && . /opt/venv/bin/activate \
-    && pip install --upgrade pip \
-    && pip install -r requirements.txt \
-    && apt-get clean \
+    libpq-dev \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the entire project
+# Set up virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy the application
 COPY . .
+
+# Create necessary directories
+RUN mkdir -p static templates/admin logs
 
 EXPOSE ${PORT_BACKEND}
 
-# Ensure commands run inside the virtual environment
-CMD ["/bin/bash", "-c", "source /opt/venv/bin/activate && python main.py"]
+CMD ["python", "main.py"]

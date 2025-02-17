@@ -2,6 +2,7 @@ import os
 from modules.logger_tool import initialise_logger
 logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from run.setup import setup_cors
@@ -10,6 +11,11 @@ from run.routers import register_routes
 # FastAPI App Setup
 app = FastAPI()
 setup_cors(app)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Register routes
 register_routes(app)
 
 if __name__ == "__main__":

@@ -1,39 +1,37 @@
 # FastAPI and Server
 fastapi
-supabase
 uvicorn
 python-dotenv
 python-multipart
 python-jose
 pyjwt
+jinja2
+
+# Database and Auth
+supabase
+sqlalchemy
+sqlalchemy-utils
+asyncpg
 
 # Neo4j and Databases
 neo4j
-psycopg
-psycopg-pool
+neontology
 
 # Redis
 redis
 
 # Data Processing and Analysis
-#pydantic
 pandas
 scipy
 requests
 openpyxl
-beautifulsoup4
-html2text
 
 # OpenAI and related tools
 openai
 ollama
-neontology
 
 # Providers
 msal
-
-# Templates and Rendering
-jinja2
 
 # Testing
 pytest

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from routers.health import router as health_router
 from routers.msgraph import router_onenote
 from routers.dev.tests import timetable_test
-from routers.database import admin
+from routers.admin import neo_admin, admin_panel
 from routers.database.init import entity_init, calendar, timetables, curriculum, get_data, schools
 from routers.database.tools import get_nodes, get_nodes_and_edges, tldraw_filesystem, get_events, calendar_structure_router, default_nodes_router, worker_structure_router
 from routers.assets import powerpoint, word, pdf
@@ -25,11 +25,14 @@ def register_routes(app: FastAPI):
     # Health check route
     app.include_router(health_router, prefix="/api", tags=["Health"])
 
+    # Admin Panel Routes
+    app.include_router(admin_panel.router, tags=["Admin Panel"])
+
     # Microsoft Graph Routes
     app.include_router(router_onenote.router, prefix="/api/msgraph", tags=["Microsoft Graph"])
 
     # Database Routes
-    app.include_router(admin.router, prefix="/api/database/admin", tags=["Admin"])
+    app.include_router(neo_admin.router, prefix="/api/database/admin", tags=["Neo Admin"])
     app.include_router(get_data.router, prefix="/api/database/upload", tags=["Upload"])
     app.include_router(get_events.router, prefix="/api/calendar", tags=["Calendar"])
     app.include_router(get_nodes.router, prefix="/api/database/tools", tags=["Tools"])

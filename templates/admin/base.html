@@ -1,0 +1,34 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ClassroomCopilot Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-gray-800 text-white p-4">
+        <div class="container mx-auto">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold">ClassroomCopilot Admin</h1>
+                    <div class="mt-2">
+                        <a href="/api/admin" class="mr-4">Dashboard</a>
+                        <a href="/api/admin/users" class="mr-4">Users</a>
+                        <a href="/api/admin/admins" class="mr-4">Admins</a>
+                    </div>
+                </div>
+                {% if request.url.path != '/api/admin/login' %}
+                <form action="/api/admin/logout" method="POST" class="mt-2">
+                    <button type="submit" class="text-white hover:text-gray-300">
+                        Logout
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+    <main class="container mx-auto mt-8">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

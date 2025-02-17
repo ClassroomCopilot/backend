@@ -1,0 +1,139 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <div>
+            <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                {% if init_super_admin %}
+                Initialize Super Admin
+                {% else %}
+                Sign in to Admin Panel
+                {% endif %}
+            </h2>
+            {% if init_super_admin %}
+            <p class="mt-2 text-center text-sm text-gray-600">
+                Set up your initial super admin account
+            </p>
+            {% endif %}
+        </div>
+
+        {% if error %}
+        <div class="rounded-md bg-red-50 p-4">
+            <div class="text-sm text-red-700">
+                {{ error }}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if success %}
+        <div class="rounded-md bg-green-50 p-4">
+            <div class="text-sm text-green-700">
+                {{ success }}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if init_super_admin %}
+        <!-- Super Admin Initialization Form -->
+        <form class="mt-8 space-y-6" id="initSuperAdminForm">
+            <input type="hidden" name="is_super_admin" value="true">
+            <div class="rounded-md shadow-sm -space-y-px">
+                <div>
+                    <label for="init_email" class="sr-only">Email address</label>
+                    <input id="init_email" name="email" type="email" required 
+                           value="{{ expected_super_admin_email }}"
+                           {% if expected_super_admin_email %}readonly{% endif %}
+                           class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" 
+                           placeholder="Email address">
+                </div>
+                <div>
+                    <label for="init_display_name" class="sr-only">Display Name</label>
+                    <input id="init_display_name" name="display_name" type="text" required 
+                           value="Super Admin"
+                           class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" 
+                           placeholder="Display Name">
+                </div>
+                <div>
+                    <label for="init_password" class="sr-only">Password</label>
+                    <input id="init_password" name="password" type="password" required 
+                           class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" 
+                           placeholder="Password">
+                </div>
+            </div>
+
+            <div>
+                <button type="submit" 
+                        class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Initialize Super Admin
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <!-- Regular Login Form -->
+        <form class="mt-8 space-y-6" action="/api/admin/login" method="POST">
+            <input type="hidden" name="remember" value="true">
+            <div class="rounded-md shadow-sm -space-y-px">
+                <div>
+                    <label for="email" class="sr-only">Email address</label>
+                    <input id="email" name="email" type="email" required 
+                           class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" 
+                           placeholder="Email address">
+                </div>
+                <div>
+                    <label for="password" class="sr-only">Password</label>
+                    <input id="password" name="password" type="password" required 
+                           class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" 
+                           placeholder="Password">
+                </div>
+            </div>
+
+            <div>
+                <button type="submit" 
+                        class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Sign in
+                </button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if init_super_admin %}
+<script>
+document.getElementById('initSuperAdminForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = {
+        email: document.getElementById('init_email').value,
+        display_name: document.getElementById('init_display_name').value,
+        password: document.getElementById('init_password').value,
+        is_super_admin: true
+    };
+
+    try {
+        const response = await fetch('/api/admin/initialize-super-admin', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            // Show success message and redirect to login
+            alert(result.message);
+            window.location.href = '/api/admin/login';
+        } else {
+            alert('Failed to initialize super admin: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while initializing super admin');
+    }
+});
+</script>
+{% endif %}
+{% endblock %} 

@@ -16,7 +16,6 @@ import modules.database.tools.neo4j_driver_tools as driver_tools
 import modules.database.tools.neo4j_http_tools as http
 import modules.database.tools.queries as query
 from fastapi import APIRouter, Depends, HTTPException
-from neo4j import GraphDatabase
 from pydantic import BaseModel
 from run.dependencies import admin_dependency
 import time
