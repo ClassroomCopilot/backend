@@ -1,0 +1,178 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ bucket.name }} Contents{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold">{{ bucket.name }}</h1>
+        <p class="text-gray-600">Path: {{ current_path or '/' }}</p>
+    </div>
+    
+    {% if current_path %}
+    <div class="mb-4">
+        <a href="{{ url_for('admin_panel:list_bucket_contents', bucket_id=bucket.id, path='/'.join(current_path.split('/')[:-1])) }}"
+           class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <svg class="mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Back
+        </a>
+    </div>
+    {% endif %}
+    
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Contents</h3>
+        </div>
+        
+        <div class="divide-y divide-gray-200">
+            {% if contents.folders %}
+            <div class="px-4 py-4 sm:px-6">
+                <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">Folders</h4>
+                <ul class="space-y-2">
+                    {% for folder in contents.folders %}
+                    <li>
+                        <a href="{{ url_for('admin_panel:list_bucket_contents', bucket_id=bucket.id, path=(current_path + '/' if current_path else '') + folder) }}"
+                           class="flex items-center text-blue-600 hover:text-blue-800 p-2 rounded-md hover:bg-blue-50">
+                            <svg class="mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <span class="font-medium">{{ folder }}</span>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if contents.files %}
+            <div class="px-4 py-4 sm:px-6">
+                <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">Files</h4>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Path</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Modified</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for file in contents.files %}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {{ file.name.split('/')[-1] }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                                    {{ file.name }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {% if file.metadata and file.metadata.mimetype %}
+                                        <span class="px-2 py-1 text-xs rounded-full 
+                                            {% if 'json' in file.metadata.mimetype %}
+                                                bg-purple-100 text-purple-800
+                                            {% elif 'image' in file.metadata.mimetype %}
+                                                bg-green-100 text-green-800
+                                            {% else %}
+                                                bg-gray-100 text-gray-800
+                                            {% endif %}
+                                        ">
+                                            {{ file.metadata.mimetype }}
+                                        </span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {% if file.metadata and file.metadata.size %}
+                                        {{ (file.metadata.size / 1024)|round(1) }} KB
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {{ file.updated_at|replace('T', ' ')|replace('Z', '') if file.updated_at else '-' }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                    <button onclick="downloadFile('{{ file.id }}')"
+                                            class="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                        <svg class="mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                        </svg>
+                                        Download
+                                    </button>
+                                    <button onclick="deleteFile('{{ bucket.id }}', '{{ file.name }}')"
+                                            class="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                                        <svg class="mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if not contents.folders and not contents.files %}
+            <div class="px-4 py-4 sm:px-6 text-gray-500 text-center">
+                This folder is empty
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function deleteFile(bucketId, filePath) {
+    if (!confirm('Are you sure you want to delete this file?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/storage/${bucketId}/objects/${filePath}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            // Reload the page to show updated contents
+            window.location.reload();
+        } else {
+            const data = await response.json();
+            alert(`Error: ${data.detail || 'Failed to delete file'}`);
+        }
+    } catch (error) {
+        alert('Error: Failed to delete file');
+        console.error('Delete error:', error);
+    }
+}
+
+async function downloadFile(fileId) {
+    try {
+        const response = await fetch(`/api/admin/storage/cc.ccschools.public/download/${fileId}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to get download URL');
+        }
+        
+        const signedUrl = (await response.text()).replace(/^"|"$/g, '');
+        window.open(signedUrl, '_blank');
+    } catch (error) {
+        console.error('Error downloading file:', error);
+        alert('Error downloading file: ' + error.message);
+    }
+}
+</script>
+{% endblock %} 

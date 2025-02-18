@@ -1,0 +1,147 @@
+{% extends "admin/base.html" %}
+
+{% block title %}School Files Management{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">School Files Management</h1>
+        <a href="/api/admin/storage/management" 
+           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700">
+            Back to Storage Management
+        </a>
+    </div>
+
+    <!-- File List -->
+    <div class="bg-white shadow-sm rounded-lg p-6">
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold text-gray-800">School TLDraw Files</h2>
+            <p class="text-sm text-gray-600 mt-1">
+                These files represent the public view of each school's TLDraw canvas.
+            </p>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">School URN</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">School Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Path</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Modified</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% if files %}
+                        {% for file in files %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {{ file.name.split('/')[0] if '/' in file.name else file.name }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {{ file.metadata.establishment_name if file.metadata and file.metadata.establishment_name else '-' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
+                                {{ file.name }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ (file.metadata.size / 1024)|round(1) if file.metadata and file.metadata.size else 0 }} KB
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ file.updated_at|replace('T', ' ')|replace('Z', '') if file.updated_at else '-' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                <button onclick="viewFile('{{ file.name }}')"
+                                        class="text-blue-600 hover:text-blue-900">View</button>
+                                <button onclick="downloadFile('{{ file.name }}')"
+                                        class="text-green-600 hover:text-green-900">Download</button>
+                                <button onclick="deleteFile('{{ file.name }}')"
+                                        class="text-red-600 hover:text-red-900">Delete</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="px-6 py-4 text-sm text-gray-500 text-center">
+                                No files found in the schools storage bucket.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function viewFile(fileName) {
+    try {
+        // Get the signed URL from our backend
+        const response = await fetch(`/api/admin/storage/cc.ccschools.public/view/${encodeURIComponent(fileName)}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to get file URL');
+        }
+        
+        // Get the signed URL from the JSON response
+        const data = await response.json();
+        
+        // Open in a new tab
+        window.open(data.url, '_blank');
+    } catch (error) {
+        console.error('Error viewing file:', error);
+        alert('Error viewing file: ' + error.message);
+    }
+}
+
+async function downloadFile(fileName) {
+    try {
+        // Get the signed URL from our backend
+        const response = await fetch(`/api/admin/storage/cc.ccschools.public/download/${encodeURIComponent(fileName)}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to get file URL');
+        }
+        
+        // Get the signed URL from the JSON response
+        const data = await response.json();
+        
+        // Create a temporary link element
+        const link = document.createElement('a');
+        link.href = data.url;
+        link.download = fileName.split('/').pop(); // Set the download filename
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (error) {
+        console.error('Error downloading file:', error);
+        alert('Error downloading file: ' + error.message);
+    }
+}
+
+async function deleteFile(fileName) {
+    if (!confirm(`Are you sure you want to delete ${fileName}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/storage/cc.ccschools.public/objects/${encodeURIComponent(fileName)}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('File deleted successfully');
+            window.location.reload();
+        } else {
+            const error = await response.json();
+            alert(`Failed to delete file: ${error.detail}`);
+        }
+    } catch (error) {
+        console.error('Error deleting file:', error);
+        alert(`Error deleting file: ${error.message}`);
+    }
+}
+</script>
+{% endblock %} 

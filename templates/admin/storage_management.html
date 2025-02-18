@@ -1,0 +1,60 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Storage Management{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Storage Management</h1>
+        <a href="/api/admin" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700">
+            Back to Dashboard
+        </a>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% for bucket in buckets %}
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">{{ bucket.name }}</h2>
+                <span class="text-sm text-gray-500">ID: {{ bucket.id }}</span>
+            </div>
+            
+            <div class="mb-4">
+                <p class="text-sm text-gray-600">File size limit: {{ (bucket.file_size_limit / 1024 / 1024) | round(2) }} MB</p>
+                <p class="text-sm text-gray-600">Public access: {{ "Yes" if bucket.public else "No" }}</p>
+            </div>
+            
+            <div class="mb-4">
+                <h3 class="text-sm font-medium mb-2">Allowed MIME Types:</h3>
+                <div class="flex flex-wrap gap-2">
+                    {% for mime_type in bucket.allowed_mime_types %}
+                    <span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">{{ mime_type }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-4">
+                <a href="/api/admin/storage/{{ bucket.id }}/contents" 
+                   class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    View Contents
+                </a>
+                {% if bucket.id == 'cc.ccschools.public' %}
+                <a href="/api/admin/storage/manage" 
+                   class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                    Manage School Files
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add any JavaScript functionality here
+});
+</script>
+{% endblock %} 

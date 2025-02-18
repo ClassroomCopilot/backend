@@ -1,9 +1,9 @@
-
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ClassroomCopilot Admin</title>
+    <title>{% block title %}ClassroomCopilot Admin{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    {% block head %}{% endblock %}
 </head>
 <body class="bg-gray-100">
     <nav class="bg-gray-800 text-white p-4">
@@ -11,18 +11,32 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-xl font-bold">ClassroomCopilot Admin</h1>
-                    <div class="mt-2">
-                        <a href="/api/admin" class="mr-4">Dashboard</a>
-                        <a href="/api/admin/users" class="mr-4">Users</a>
-                        <a href="/api/admin/admins" class="mr-4">Admins</a>
+                    <div class="mt-2 space-x-4">
+                        <a href="/api/admin" class="hover:text-gray-300">Dashboard</a>
+                        <a href="/api/admin/users" class="hover:text-gray-300">Users</a>
+                        {% if admin and admin.is_super_admin %}
+                        <a href="/api/admin/admins" class="hover:text-gray-300">Admins</a>
+                        <a href="/api/admin/schools/manage" class="hover:text-gray-300 font-medium">Schools</a>
+                        <a href="/api/admin/storage/management" class="hover:text-gray-300">Storage</a>
+                        {% endif %}
                     </div>
                 </div>
                 {% if request.url.path != '/api/admin/login' %}
-                <form action="/api/admin/logout" method="POST" class="mt-2">
-                    <button type="submit" class="text-white hover:text-gray-300">
-                        Logout
-                    </button>
-                </form>
+                <div class="flex items-center">
+                    {% if admin %}
+                    <span class="mr-4 text-sm">
+                        {{ admin.display_name or admin.email }}
+                        {% if admin.is_super_admin %}
+                        <span class="ml-2 px-2 py-1 bg-yellow-500 text-yellow-900 rounded-full text-xs">Super Admin</span>
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                    <form action="/api/admin/logout" method="POST">
+                        <button type="submit" class="text-white hover:text-gray-300">
+                            Logout
+                        </button>
+                    </form>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -30,5 +44,6 @@
     <main class="container mx-auto mt-8">
         {% block content %}{% endblock %}
     </main>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

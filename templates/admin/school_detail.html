@@ -1,0 +1,231 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="bg-white shadow-sm rounded-lg p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold">School Details</h2>
+            <a href="/api/admin/schools/manage" 
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700">
+                Back to Schools
+            </a>
+        </div>
+
+        <!-- Basic Information -->
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">Basic Information</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">URN</p>
+                    <p class="mt-1">{{ school.urn }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Establishment Number</p>
+                    <p class="mt-1">{{ school.establishment_number }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">School Name</p>
+                    <p class="mt-1">{{ school.establishment_name }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Type</p>
+                    <p class="mt-1">{{ school.establishment_type }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Type Group</p>
+                    <p class="mt-1">{{ school.establishment_type_group }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Status</p>
+                    <p class="mt-1">{{ school.establishment_status }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Phase of Education</p>
+                    <p class="mt-1">{{ school.phase_of_education }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Local Authority</p>
+                    <p class="mt-1">{{ school.la_name }} ({{ school.la_code }})</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contact Information -->
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">Contact Information</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Address</p>
+                    <p class="mt-1">
+                        {{ school.street }}<br>
+                        {% if school.locality %}{{ school.locality }}<br>{% endif %}
+                        {% if school.address3 %}{{ school.address3 }}<br>{% endif %}
+                        {{ school.town }}<br>
+                        {% if school.county %}{{ school.county }}<br>{% endif %}
+                        {{ school.postcode }}
+                    </p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Contact Details</p>
+                    <p class="mt-1">
+                        {% if school.telephone_num %}Tel: {{ school.telephone_num }}<br>{% endif %}
+                        {% if school.school_website %}
+                        Website: <a href="{{ school.school_website }}" target="_blank" class="text-blue-600 hover:text-blue-800">
+                            {{ school.school_website }}
+                        </a>
+                        {% endif %}
+                    </p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Head Teacher</p>
+                    <p class="mt-1">
+                        {% if school.head_title or school.head_first_name or school.head_last_name %}
+                            {{ school.head_title }} {{ school.head_first_name }} {{ school.head_last_name }}
+                            {% if school.head_preferred_job_title %}<br>{{ school.head_preferred_job_title }}{% endif %}
+                        {% else %}
+                            Not specified
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- School Details -->
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">School Details</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Age Range</p>
+                    <p class="mt-1">{{ school.statutory_low_age }} to {{ school.statutory_high_age }} years</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">School Capacity</p>
+                    <p class="mt-1">{{ school.school_capacity }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Gender</p>
+                    <p class="mt-1">{{ school.gender }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Religious Character</p>
+                    <p class="mt-1">{{ school.religious_character or 'None' }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Ofsted Rating</p>
+                    <p class="mt-1">{{ school.ofsted_rating or 'Not Available' }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Last Inspection</p>
+                    <p class="mt-1">{{ school.ofsted_last_inspection or 'Not Available' }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Latest Statistics -->
+        {% if statistics %}
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">Latest Statistics ({{ statistics.census_date }})</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Total Pupils</p>
+                    <p class="mt-1">{{ statistics.number_of_pupils }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Boys</p>
+                    <p class="mt-1">{{ statistics.number_of_boys }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Girls</p>
+                    <p class="mt-1">{{ statistics.number_of_girls }}</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">FSM Percentage</p>
+                    <p class="mt-1">{{ statistics.percentage_fsm }}%</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Graph Database Management -->
+        {% if admin.is_super_admin %}
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">Graph Database Management</h3>
+            <div class="grid grid-cols-1 gap-4">
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <h4 class="text-md font-medium mb-2">School Graph Status</h4>
+                    <div id="graphStatus" class="mb-4">
+                        <!-- Status will be populated via JS -->
+                        <p class="text-sm text-gray-600">Checking status...</p>
+                    </div>
+                    <div class="space-y-2">
+                        <button onclick="initializeSchoolNode()"
+                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                            Initialize School Node
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+async function initializeSchoolNode() {
+    if (!confirm('Are you sure you want to initialize the school node in the graph database?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/initialize-node`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            alert('School node initialized successfully');
+            location.reload();
+        } else {
+            alert('Failed to initialize school node: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while initializing school node');
+    }
+}
+
+// Function to check graph status (to be implemented)
+async function checkGraphStatus() {
+    try {
+        const statusElement = document.getElementById('graphStatus');
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/graph-status`);
+        const result = await response.json();
+        
+        if (response.ok) {
+            statusElement.innerHTML = `
+                <p class="text-sm ${result.exists ? 'text-green-600' : 'text-yellow-600'}">
+                    ${result.exists ? 'School node exists in graph database' : 'School node not yet initialized'}
+                </p>
+            `;
+        } else {
+            statusElement.innerHTML = `
+                <p class="text-sm text-red-600">
+                    Error checking graph status: ${result.detail}
+                </p>
+            `;
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('graphStatus').innerHTML = `
+            <p class="text-sm text-red-600">
+                Error checking graph status
+            </p>
+        `;
+    }
+}
+
+// Check status on page load
+document.addEventListener('DOMContentLoaded', checkGraphStatus);
+</script>
+{% endblock %} 

@@ -1,0 +1,144 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="p-6">
+    <div class="bg-white shadow-sm rounded-lg p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold text-gray-800">Schools Management</h2>
+            <a href="/api/admin" 
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700">
+                Back to Dashboard
+            </a>
+        </div>
+
+        <!-- Import Section -->
+        <div class="mb-8 bg-gray-50 p-6 rounded-lg">
+            <h3 class="text-lg font-semibold mb-4 text-gray-800">Import Schools Data</h3>
+            <form id="importForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">CSV File</label>
+                    <input type="file" 
+                           id="csvFile" 
+                           accept=".csv"
+                           class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <button type="submit"
+                            class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Import Schools
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Schools List -->
+        <div>
+            <h3 class="text-lg font-semibold mb-4 text-gray-800">Imported Schools</h3>
+            <div class="bg-white overflow-hidden shadow-sm rounded-lg">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URN</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LA</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phase</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for school in schools %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ school.urn }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ school.establishment_name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ school.establishment_type }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {% if school.establishment_status == 'Open' %}
+                                        bg-green-100 text-green-800
+                                    {% else %}
+                                        bg-red-100 text-red-800
+                                    {% endif %}">
+                                    {{ school.establishment_status }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ school.la_name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ school.phase_of_education }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <button onclick="viewSchool('{{ school.id }}')"
+                                        class="text-blue-600 hover:text-blue-900 mr-2">View</button>
+                                <button onclick="deleteSchool('{{ school.id }}')"
+                                        class="text-red-600 hover:text-red-900">Delete</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('importForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('csvFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a CSV file');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const response = await fetch('/api/admin/schools/import', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            alert('Schools imported successfully');
+            window.location.reload();
+        } else {
+            alert('Failed to import schools: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while importing schools');
+    }
+});
+
+async function viewSchool(schoolId) {
+    window.location.href = `/api/admin/schools/${schoolId}`;
+}
+
+async function deleteSchool(schoolId) {
+    if (!confirm('Are you sure you want to delete this school?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/schools/${schoolId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            const result = await response.json();
+            alert('Failed to delete school: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while deleting the school');
+    }
+}
+</script>
+{% endblock %} 
