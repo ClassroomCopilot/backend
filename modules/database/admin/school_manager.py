@@ -10,11 +10,28 @@ class SchoolManager:
     def __init__(self):
         self.driver = driver_tools.get_driver()
         self.logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
-        self.supabase = create_client(
-            os.getenv("VITE_SUPABASE_URL", "http://kong:8000"),
-            os.getenv("SERVICE_ROLE_KEY")
-        )
         
+        # Initialize Supabase client with correct URL and service role key
+        supabase_url = os.getenv("SUPABASE_BACKEND_URL")
+        service_role_key = os.getenv("SERVICE_ROLE_KEY")
+        
+        self.logger.info(f"Initializing Supabase client with URL: {supabase_url}")
+        self.supabase = create_client(supabase_url, service_role_key)
+        
+        # Set headers for admin operations
+        self.supabase.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Set storage client headers explicitly
+        self.supabase.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
+
     def create_schools_database(self):
         """Creates the main cc.ccschools database in Neo4j"""
         try:
@@ -40,8 +57,8 @@ class SchoolManager:
                 establishment_type=school_data['establishment_type'],
                 establishment_status=school_data['establishment_status'],
                 phase_of_education=school_data['phase_of_education'],
-                statutory_low_age=float(school_data['statutory_low_age']) if school_data.get('statutory_low_age') is not None else 0.0,
-                statutory_high_age=float(school_data['statutory_high_age']) if school_data.get('statutory_high_age') is not None else 0.0,
+                statutory_low_age=int(school_data['statutory_low_age']) if school_data.get('statutory_low_age') is not None else 0,
+                statutory_high_age=int(school_data['statutory_high_age']) if school_data.get('statutory_high_age') is not None else 0,
                 religious_character=school_data.get('religious_character'),
                 school_capacity=int(school_data['school_capacity']) if school_data.get('school_capacity') is not None else 0,
                 school_website=school_data.get('school_website', ''),
@@ -157,12 +174,59 @@ class SchoolManager:
                 }
             }
             
-            # Upload to Supabase storage
-            self.supabase.storage.from_("cc.ccschools.public").upload(
-                file_path,
-                json.dumps(tldraw_data).encode(),
-                file_options
-            )
+            try:
+                # Create a fresh service role client for storage operations
+                self.logger.info("Creating fresh service role client for storage operations")
+                service_client = create_client(
+                    os.getenv("SUPABASE_BACKEND_URL"),
+                    os.getenv("SERVICE_ROLE_KEY")
+                )
+                
+                self.logger.debug(f"Service client created with URL: {os.getenv('SUPABASE_BACKEND_URL')}")
+                
+                service_client.headers = {
+                    "apiKey": os.getenv("SERVICE_ROLE_KEY"),
+                    "Authorization": f"Bearer {os.getenv('SERVICE_ROLE_KEY')}",
+                    "Content-Type": "application/json"
+                }
+                service_client.storage._client.headers.update({
+                    "apiKey": os.getenv("SERVICE_ROLE_KEY"),
+                    "Authorization": f"Bearer {os.getenv('SERVICE_ROLE_KEY')}",
+                    "Content-Type": "application/json"
+                })
+                
+                self.logger.debug("Headers set for service client and storage client")
+                
+                # Upload to Supabase storage using service role client
+                self.logger.info(f"Uploading tldraw file for school {school_data['urn']}")
+                self.logger.debug(f"File path: {file_path}")
+                self.logger.debug(f"File options: {file_options}")
+                
+                # First, ensure the bucket exists
+                self.logger.info("Checking if bucket cc.ccschools.public exists")
+                try:
+                    bucket = service_client.storage.get_bucket("cc.ccschools.public")
+                    self.logger.info("Bucket cc.ccschools.public exists")
+                except Exception as bucket_error:
+                    self.logger.error(f"Error checking bucket: {str(bucket_error)}")
+                    if hasattr(bucket_error, 'response'):
+                        self.logger.error(f"Bucket error response: {bucket_error.response.text if hasattr(bucket_error.response, 'text') else bucket_error.response}")
+                    raise bucket_error
+                
+                # Attempt the upload
+                self.logger.info("Attempting file upload")
+                result = service_client.storage.from_("cc.ccschools.public").upload(
+                    path=file_path,
+                    file=json.dumps(tldraw_data).encode(),
+                    file_options=file_options
+                )
+                self.logger.info(f"Upload successful. Result: {result}")
+                
+            except Exception as upload_error:
+                self.logger.error(f"Error uploading tldraw file: {str(upload_error)}")
+                if hasattr(upload_error, 'response'):
+                    self.logger.error(f"Upload error response: {upload_error.response.text if hasattr(upload_error.response, 'text') else upload_error.response}")
+                raise upload_error
             
             # Create node in Neo4j
             with self.driver.session(database="cc.ccschools") as session:

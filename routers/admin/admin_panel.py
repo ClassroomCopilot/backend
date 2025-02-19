@@ -17,7 +17,7 @@ from modules.database.admin.school_manager import SchoolManager
 logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
 
 # Initialize Supabase client with service role key for admin operations
-supabase_url = os.getenv("SUPABASE_BACKEND_URL", "http://kong:8000")
+supabase_url = os.getenv("SUPABASE_BACKEND_URL")
 service_role_key = os.getenv("SERVICE_ROLE_KEY")
 anon_key = os.getenv("ANON_KEY")
 
@@ -33,8 +33,17 @@ admin_supabase: Client = create_client(
 # Set headers for admin operations
 admin_supabase.headers = {
     "apiKey": service_role_key,
-    "Authorization": f"Bearer {service_role_key}"
+    "Authorization": f"Bearer {service_role_key}",
+    "Content-Type": "application/json",
+    "X-Client-Info": "supabase-py/0.0.1"
 }
+
+# Set storage client headers explicitly
+admin_supabase.storage._client.headers.update({
+    "apiKey": service_role_key,
+    "Authorization": f"Bearer {service_role_key}",
+    "Content-Type": "application/json"
+})
 
 # Regular client for non-admin operations
 logger.info(f"Initializing regular Supabase client with URL: {supabase_url}")
@@ -63,23 +72,59 @@ async def verify_admin(request: Request):
         
         logger.debug("Verifying admin access token")
         
-        # Get user from token
-        user_response = admin_supabase.auth.get_user(access_token)
-        user_id = user_response.user.id
+        # Create a fresh service role client for this request
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
         
-        logger.debug(f"Verifying admin for user_id: {user_id}")
-        
-        # Use service role client to check admin profile
-        admin_result = admin_supabase.table('admin_profiles').select("*").eq('id', user_id).single().execute()
-        
-        if not admin_result.data:
-            logger.error(f"No admin profile found for user {user_id}")
-            raise HTTPException(status_code=403, detail="Not an admin user")
-        
-        # Log admin data for debugging
-        logger.debug(f"Admin data: {admin_result.data}")
-        
-        return admin_result.data
+        try:
+            # Get user from token using service role client
+            user_response = service_client.auth.get_user(access_token)
+            user_id = user_response.user.id
+            
+            logger.debug(f"Verifying admin for user_id: {user_id}")
+            
+            # Use service role client to check admin profile
+            admin_result = service_client.table('admin_profiles').select("*").eq('id', user_id).single().execute()
+            
+            if not admin_result.data:
+                logger.error(f"No admin profile found for user {user_id}")
+                raise HTTPException(status_code=403, detail="Not an admin user")
+            
+            # Log admin data for debugging
+            logger.debug(f"Admin data: {admin_result.data}")
+            
+            # Create a new client with the user's access token for subsequent operations
+            user_client = create_client(supabase_url, service_role_key)
+            user_client.headers = {
+                "apiKey": service_role_key,
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # Update storage client headers explicitly
+            user_client.storage._client.headers.update({
+                "apiKey": service_role_key,
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            })
+            
+            # Store the client in the request state for use in other endpoints
+            request.state.supabase = user_client
+            
+            return admin_result.data
+            
+        except Exception as e:
+            logger.error(f"Error verifying admin token: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+            
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Admin verification failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
@@ -206,6 +251,20 @@ async def login(
         user_id = session.user.id
         
         logger.debug(f"Successfully authenticated user: {user_id}")
+        
+        # Update admin_supabase client headers with the new session token
+        admin_supabase.headers.update({
+            "Authorization": f"Bearer {session.access_token}",
+            "apiKey": anon_key  # Use anon key for authenticated requests
+        })
+        
+        # Update storage client headers explicitly
+        admin_supabase.storage._client.headers.update({
+            "Authorization": f"Bearer {session.access_token}",
+            "apiKey": anon_key
+        })
+        
+        logger.debug("Updated Supabase client headers with new session token")
         
         # Verify the user is an admin using service role client
         try:
@@ -548,6 +607,14 @@ async def import_schools(
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can import schools")
         
+        # Create a fresh service role client for database operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        
         # Read and validate CSV file
         content = await file.read()
         csv_text = content.decode('utf-8-sig')  # Handle BOM if present
@@ -660,9 +727,9 @@ async def import_schools(
             
             schools_data.append(school_data)
         
-        # Batch insert schools
+        # Batch insert schools using service role client
         if schools_data:
-            result = admin_supabase.table("schools").upsert(
+            result = service_client.table("schools").upsert(
                 schools_data, 
                 on_conflict="urn"  # Update if URN already exists
             ).execute()
@@ -761,19 +828,62 @@ async def initialize_school_node(
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can initialize school nodes")
         
-        # Get school data from Supabase
-        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        # Create a fresh service role client for database operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Get school data from Supabase using service role client
+        school = service_client.table("schools").select("*").eq("id", school_id).single().execute()
         if not school.data:
             raise HTTPException(status_code=404, detail="School not found")
         
-        # Create school node
+        # Create school manager and verify database exists
         school_manager = SchoolManager()
-        result = school_manager.create_school_node(school.data)
         
-        if result["status"] == "error":
-            raise HTTPException(status_code=500, detail=result["message"])
+        # Verify cc.ccschools database exists
+        try:
+            with school_manager.driver.session() as session:
+                result = session.run("SHOW DATABASES")
+                databases = [record["name"] for record in result]
+                if "cc.ccschools" not in databases:
+                    logger.error("cc.ccschools database does not exist")
+                    raise HTTPException(
+                        status_code=500, 
+                        detail="Schools database not initialized. Please initialize database first."
+                    )
+        except Exception as db_error:
+            logger.error(f"Error checking database existence: {str(db_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to verify database existence: {str(db_error)}"
+            )
         
-        return result
+        # Create school node using SchoolManager
+        try:
+            result = school_manager.create_school_node(school.data)
+            
+            if result["status"] == "error":
+                raise Exception(result["message"])
+                
+            return {
+                "status": "success",
+                "message": "School node created successfully",
+                "node_id": f"School_{school.data['urn']}"
+            }
+                
+        except Exception as node_error:
+            logger.error(f"Error creating school node: {str(node_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create school node: {str(node_error)}"
+            )
+            
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error initializing school node: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -793,16 +903,29 @@ async def check_school_graph_status(
         if not school.data:
             raise HTTPException(status_code=404, detail="School not found")
         
-        # Check if node exists in Neo4j
+        # Check if node exists in Neo4j and get its properties
         school_manager = SchoolManager()
         with school_manager.driver.session(database="cc.ccschools") as session:
             result = session.run(
-                "MATCH (s:School {unique_id: $unique_id}) RETURN s",
+                """
+                MATCH (s:School {unique_id: $unique_id}) 
+                RETURN s
+                """,
                 {"unique_id": f"School_{school.data['urn']}"}
             )
-            exists = result.single() is not None
+            record = result.single()
+            exists = record is not None
             
-        return {"exists": exists}
+            # If node exists, get its properties
+            node_data = None
+            if exists:
+                node = record['s']
+                node_data = dict(node.items())  # Convert node properties to dict
+            
+        return {
+            "exists": exists,
+            "node_data": node_data
+        }
     except Exception as e:
         logger.error(f"Error checking school graph status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -836,6 +959,19 @@ async def check_storage(admin: dict = Depends(verify_admin)):
         try:
             logger.info(f"Checking storage buckets using Supabase at URL: {supabase_url}")
             
+            # Create a fresh service role client for storage operations
+            service_client = create_client(supabase_url, service_role_key)
+            service_client.headers = {
+                "apiKey": service_role_key,
+                "Authorization": f"Bearer {service_role_key}",
+                "Content-Type": "application/json"
+            }
+            service_client.storage._client.headers.update({
+                "apiKey": service_role_key,
+                "Authorization": f"Bearer {service_role_key}",
+                "Content-Type": "application/json"
+            })
+            
             # Define the buckets we want to check
             required_buckets = [
                 {
@@ -850,16 +986,12 @@ async def check_storage(admin: dict = Depends(verify_admin)):
                 }
             ]
             
-            # Get list of all buckets
-            try:
-                all_buckets = admin_supabase.storage.list_buckets()
-                existing_bucket_ids = [bucket.id for bucket in all_buckets]
-                logger.debug(f"Found existing buckets: {existing_bucket_ids}")
-            except Exception as e:
-                logger.error(f"Error listing buckets: {str(e)}")
-                existing_bucket_ids = []
+            # List buckets and check existence
+            all_buckets = service_client.storage.list_buckets()
+            existing_bucket_ids = [bucket.id for bucket in all_buckets]
+            logger.debug(f"Found buckets via list_buckets: {existing_bucket_ids}")
             
-            # Check each required bucket
+            # Update bucket existence status
             for bucket in required_buckets:
                 bucket['exists'] = bucket['id'] in existing_bucket_ids
                 logger.debug(f"Bucket {bucket['id']} exists: {bucket['exists']}")
@@ -873,6 +1005,8 @@ async def check_storage(admin: dict = Depends(verify_admin)):
             
         except Exception as e:
             logger.error(f"Error checking storage: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
             raise HTTPException(status_code=500, detail=f"Error checking storage: {str(e)}")
             
     except HTTPException:
@@ -888,6 +1022,19 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
         # Verify super admin status
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can initialize storage")
+
+        # Create initial service role policy
+        initial_policy = """
+        drop policy if exists "Service role has full access to buckets" on storage.buckets;
+        create policy "Service role has full access to buckets"
+            on storage.buckets for all
+            using (auth.role() = 'service_role')
+            with check (auth.role() = 'service_role');
+        """
+        try:
+            admin_supabase.postgrest.rpc('exec_sql', {'query': initial_policy}).execute()
+        except Exception as e:
+            logger.warning(f"Initial policy creation warning: {str(e)}")
 
         # Create buckets using storage API
         buckets_to_create = [
@@ -950,16 +1097,24 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
                     created_buckets.append(bucket['id'])
                 else:
                     # Create bucket if it doesn't exist
-                    response = admin_supabase.storage.create_bucket(
-                        bucket['id'],
-                        options={
-                            'public': bucket['public'],
-                            'file_size_limit': bucket['file_size_limit'],
-                            'allowed_mime_types': bucket['allowed_mime_types']
-                        }
-                    )
-                    logger.info(f"Created bucket {bucket['id']}")
-                    created_buckets.append(bucket['id'])
+                    logger.debug(f"Creating bucket {bucket['id']} with options: {bucket}")
+                    try:
+                        response = admin_supabase.storage.create_bucket(
+                            bucket['id'],
+                            options={
+                                'public': bucket['public'],
+                                'file_size_limit': bucket['file_size_limit'],
+                                'allowed_mime_types': bucket['allowed_mime_types']
+                            }
+                        )
+                        logger.info(f"Created bucket {bucket['id']}")
+                        logger.debug(f"Bucket creation response: {response}")
+                        created_buckets.append(bucket['id'])
+                    except Exception as bucket_error:
+                        logger.error(f"Detailed bucket creation error for {bucket['id']}: {str(bucket_error)}")
+                        if hasattr(bucket_error, 'response'):
+                            logger.error(f"Error response: {bucket_error.response.text if hasattr(bucket_error.response, 'text') else bucket_error.response}")
+                        raise bucket_error
             except Exception as e:
                 logger.warning(f"Error with bucket {bucket['id']}: {str(e)}")
 
@@ -969,7 +1124,6 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             drop policy if exists "Users can read own files" on storage.objects;
             create policy "Users can read own files"
                 on storage.objects for select
-                to authenticated
                 using (
                     bucket_id = 'cc.ccusers.public'
                     and (
@@ -986,7 +1140,6 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             drop policy if exists "Users can upload own files" on storage.objects;
             create policy "Users can upload own files"
                 on storage.objects for insert
-                to authenticated
                 with check (
                     bucket_id = 'cc.ccusers.public'
                     and path_tokens[1] = auth.uid()::text
@@ -996,7 +1149,6 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             drop policy if exists "Users can update own files" on storage.objects;
             create policy "Users can update own files"
                 on storage.objects for update
-                to authenticated
                 using (
                     bucket_id = 'cc.ccusers.public'
                     and path_tokens[1] = auth.uid()::text
@@ -1006,7 +1158,6 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             drop policy if exists "Users can delete own files" on storage.objects;
             create policy "Users can delete own files"
                 on storage.objects for delete
-                to authenticated
                 using (
                     bucket_id = 'cc.ccusers.public'
                     and path_tokens[1] = auth.uid()::text
@@ -1016,20 +1167,32 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             drop policy if exists "Anyone can read school files" on storage.objects;
             create policy "Anyone can read school files"
                 on storage.objects for select
-                to authenticated
                 using (bucket_id = 'cc.ccschools.public');
             """,
             """
             drop policy if exists "Only admins can manage school files" on storage.objects;
             create policy "Only admins can manage school files"
                 on storage.objects for all
-                to authenticated
                 using (
                     bucket_id = 'cc.ccschools.public'
-                    and exists (
-                        select 1 from auth.users
-                        where auth.uid() = auth.users.id
-                        and raw_user_meta_data->>'is_admin' = 'true'
+                    and (
+                        auth.role() = 'service_role'
+                        or exists (
+                            select 1 from auth.users
+                            where auth.uid() = auth.users.id
+                            and raw_user_meta_data->>'is_admin' = 'true'
+                        )
+                    )
+                )
+                with check (
+                    bucket_id = 'cc.ccschools.public'
+                    and (
+                        auth.role() = 'service_role'
+                        or exists (
+                            select 1 from auth.users
+                            where auth.uid() = auth.users.id
+                            and raw_user_meta_data->>'is_admin' = 'true'
+                        )
                     )
                 );
             """,
@@ -1037,7 +1200,20 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             drop policy if exists "Service role has full access to objects" on storage.objects;
             create policy "Service role has full access to objects"
                 on storage.objects for all
-                using (auth.role() = 'service_role');
+                using (auth.role() = 'service_role')
+                with check (auth.role() = 'service_role');
+            """,
+            """
+            drop policy if exists "Admins can create signed URLs" on storage.objects;
+            create policy "Admins can create signed URLs"
+                on storage.objects for select
+                using (
+                    exists (
+                        select 1 from auth.users
+                        where auth.uid() = auth.users.id
+                        and raw_user_meta_data->>'is_admin' = 'true'
+                    )
+                );
             """
         ]
 
@@ -1064,9 +1240,23 @@ async def storage_management(request: Request, admin: dict = Depends(verify_admi
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can access storage management")
         
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
+        
         # Get bucket information using storage API
         try:
-            buckets = admin_supabase.storage.list_buckets()
+            logger.info(f"Listing buckets from Supabase storage at URL {supabase_url}")
+            buckets = service_client.storage.list_buckets()
             # Convert bucket objects to dictionaries for template
             buckets_data = [{
                 'id': bucket.id,
@@ -1077,8 +1267,13 @@ async def storage_management(request: Request, admin: dict = Depends(verify_admi
                 'file_size_limit': bucket.file_size_limit,
                 'allowed_mime_types': bucket.allowed_mime_types
             } for bucket in buckets if bucket.id in ['cc.ccusers.public', 'cc.ccschools.public']]
+            
+            logger.debug(f"Found buckets: {buckets_data}")
+            
         except Exception as e:
             logger.error(f"Error getting bucket information: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
             buckets_data = []
         
         return templates.TemplateResponse(
@@ -1105,9 +1300,23 @@ async def list_bucket_contents(
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can list bucket contents")
         
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
+        
         # Verify bucket exists using storage API
         try:
-            bucket = admin_supabase.storage.get_bucket(bucket_id)
+            logger.info(f"Getting bucket {bucket_id} from Supabase storage at URL {supabase_url}")
+            bucket = service_client.storage.get_bucket(bucket_id)
             bucket_data = {
                 'id': bucket.id,
                 'name': bucket.name,
@@ -1117,14 +1326,18 @@ async def list_bucket_contents(
                 'file_size_limit': bucket.file_size_limit,
                 'allowed_mime_types': bucket.allowed_mime_types
             }
+            logger.debug(f"Found bucket: {bucket_data}")
         except Exception as e:
             logger.error(f"Error getting bucket {bucket_id}: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
             raise HTTPException(status_code=404, detail="Bucket not found")
         
         # List objects in the bucket
         try:
-            # Use storage API to list files
-            files = admin_supabase.storage.from_(bucket_id).list(path)
+            logger.info(f"Listing files in bucket {bucket_id} at path '{path}'")
+            # Use storage API to list files with service role client
+            files = service_client.storage.from_(bucket_id).list(path)
             logger.debug(f"Files in bucket {bucket_id}: {files}")
             
             # Organize objects into folders and files
@@ -1136,8 +1349,9 @@ async def list_bucket_contents(
             for file in files:
                 file_path = file['name']
                 if path:
-                    # Remove the prefix path
-                    file_path = file_path[len(path):].lstrip('/')
+                    # Remove the prefix path if we're in a subfolder
+                    if file_path.startswith(path):
+                        file_path = file_path[len(path):].lstrip('/')
                 
                 # Split path into parts
                 parts = file_path.split('/')
@@ -1147,13 +1361,20 @@ async def list_bucket_contents(
                     contents['folders'].add(parts[0])
                 else:
                     # This is a file in the current directory
+                    # Add full path back if we're in a subfolder
+                    if path:
+                        file['name'] = f"{path}/{file_path}"
                     contents['files'].append(file)
             
             contents['folders'] = sorted(list(contents['folders']))
             contents['files'] = sorted(contents['files'], key=lambda x: x['name'])
             
+            logger.debug(f"Processed contents: {contents}")
+            
         except Exception as e:
             logger.error(f"Error listing bucket contents: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
             contents = {'folders': [], 'files': []}
         
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -1204,12 +1425,26 @@ async def manage_school_storage(request: Request, admin: dict = Depends(verify_a
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can manage storage")
         
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
+        
         # Get list of files from the schools bucket
         try:
             logger.info(f"Listing files from Supabase storage at URL {supabase_url}, bucket: cc.ccschools.public")
-            # List all files in the bucket
-            files = admin_supabase.storage.from_('cc.ccschools.public').list()
-            logger.debug(f"School files from Supabase at {supabase_url}: {files}")
+            
+            # First, list all root level items
+            files = service_client.storage.from_('cc.ccschools.public').list()
+            logger.debug(f"Root level files from Supabase: {files}")
             
             # Process files to ensure we have complete path information
             processed_files = []
@@ -1225,31 +1460,56 @@ async def manage_school_storage(request: Request, admin: dict = Depends(verify_a
                         'metadata': getattr(file, 'metadata', {})
                     }
                 
-                # If this is a directory entry (no metadata), list its contents
-                if not file['metadata']:
+                # Get the school URN from the file path
+                school_urn = file['name'].split('/')[0] if '/' in file['name'] else file['name']
+                
+                # If this is a school URN directory, check for tldraw.json
+                if not file['name'].endswith('tldraw.json'):
                     try:
-                        subfiles = admin_supabase.storage.from_('cc.ccschools.public').list(file['name'])
+                        # List contents of this folder
+                        subfiles = service_client.storage.from_('cc.ccschools.public').list(school_urn)
+                        logger.debug(f"Subfiles for {school_urn}: {subfiles}")
+                        
                         for subfile in subfiles:
                             if isinstance(subfile, dict):
-                                if subfile['name'].endswith('tldraw.json'):
-                                    # Construct full path
-                                    full_path = f"{file['name']}/{subfile['name']}"
-                                    subfile['name'] = full_path
-                                    processed_files.append(subfile)
+                                subfile_name = subfile['name']
                             else:
-                                if subfile.name.endswith('tldraw.json'):
-                                    # Convert to dict and add
-                                    processed_files.append({
-                                        'name': f"{file['name']}/{subfile.name}",
-                                        'id': getattr(subfile, 'id', None),
-                                        'updated_at': getattr(subfile, 'updated_at', None),
-                                        'created_at': getattr(subfile, 'created_at', None),
-                                        'last_accessed_at': getattr(subfile, 'last_accessed_at', None),
-                                        'metadata': getattr(subfile, 'metadata', {})
-                                    })
+                                subfile_name = subfile.name
+                                
+                            if subfile_name.endswith('tldraw.json'):
+                                # Get school info for metadata
+                                try:
+                                    school = service_client.table("schools").select("*").eq("urn", school_urn).single().execute()
+                                    metadata = {
+                                        "establishment_name": school.data.get("establishment_name"),
+                                        "establishment_type": school.data.get("establishment_type")
+                                    } if school.data else {}
+                                except Exception as school_error:
+                                    logger.warning(f"Could not get school info for {school_urn}: {str(school_error)}")
+                                    metadata = {}
+                                
+                                # Add to processed files with full path
+                                full_path = f"{school_urn}/{subfile_name}"
+                                processed_files.append({
+                                    'name': full_path,
+                                    'id': getattr(subfile, 'id', None) if not isinstance(subfile, dict) else subfile.get('id'),
+                                    'updated_at': getattr(subfile, 'updated_at', None) if not isinstance(subfile, dict) else subfile.get('updated_at'),
+                                    'created_at': getattr(subfile, 'created_at', None) if not isinstance(subfile, dict) else subfile.get('created_at'),
+                                    'metadata': metadata
+                                })
                     except Exception as e:
-                        logger.warning(f"Error listing contents of {file['name']}: {str(e)}")
+                        logger.warning(f"Error listing contents of {school_urn}: {str(e)}")
                 else:
+                    # This is already a tldraw.json file, get its school info
+                    school_urn = file['name'].split('/')[0]
+                    try:
+                        school = service_client.table("schools").select("*").eq("urn", school_urn).single().execute()
+                        file['metadata'] = {
+                            "establishment_name": school.data.get("establishment_name"),
+                            "establishment_type": school.data.get("establishment_type")
+                        } if school.data else {}
+                    except Exception as school_error:
+                        logger.warning(f"Could not get school info for {school_urn}: {str(school_error)}")
                     processed_files.append(file)
             
             logger.debug(f"Processed files: {processed_files}")
@@ -1257,6 +1517,8 @@ async def manage_school_storage(request: Request, admin: dict = Depends(verify_a
             
         except Exception as e:
             logger.error(f"Error listing school files: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
             files = []
         
         return templates.TemplateResponse(
@@ -1273,6 +1535,7 @@ async def manage_school_storage(request: Request, admin: dict = Depends(verify_a
 
 @router.get("/storage/{bucket_id}/view/{file_path:path}")
 async def view_file(
+    request: Request,
     bucket_id: str,
     file_path: str,
     admin: dict = Depends(verify_admin)
@@ -1282,14 +1545,30 @@ async def view_file(
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can view files")
         
-        # Clean up file path
+        # Clean up file path and ensure it includes the school URN
         file_path = file_path.strip('/')
+        if not '/' in file_path:
+            raise HTTPException(status_code=400, detail="Invalid file path. Must include school URN.")
+            
         logger.info(f"Attempting to view file from Supabase storage at URL {supabase_url}, bucket: {bucket_id}, path: {file_path}")
+        
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
         
         # Get signed URL for the file
         try:
             # Create signed URL that expires in 1 hour (3600 seconds)
-            file_url = admin_supabase.storage.from_(bucket_id).create_signed_url(
+            file_url = service_client.storage.from_(bucket_id).create_signed_url(
                 path=file_path,
                 expires_in=3600
             )
@@ -1322,6 +1601,7 @@ async def view_file(
 
 @router.get("/storage/{bucket_id}/download/{file_path:path}")
 async def download_file(
+    request: Request,
     bucket_id: str,
     file_path: str,
     admin: dict = Depends(verify_admin)
@@ -1331,14 +1611,30 @@ async def download_file(
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can download files")
         
-        # Clean up file path
+        # Clean up file path and ensure it includes the school URN
         file_path = file_path.strip('/')
+        if not '/' in file_path:
+            raise HTTPException(status_code=400, detail="Invalid file path. Must include school URN.")
+            
         logger.info(f"Attempting to download file from Supabase storage at URL {supabase_url}, bucket: {bucket_id}, path: {file_path}")
+        
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
         
         # Get signed URL for the file
         try:
             # Create signed URL that expires in 1 hour (3600 seconds)
-            file_url = admin_supabase.storage.from_(bucket_id).create_signed_url(
+            file_url = service_client.storage.from_(bucket_id).create_signed_url(
                 path=file_path,
                 expires_in=3600
             )
@@ -1367,6 +1663,100 @@ async def download_file(
         raise
     except Exception as e:
         logger.error(f"Error downloading file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/storage/{bucket_id}/upload/{school_urn}")
+async def upload_file(
+    bucket_id: str,
+    school_urn: str,
+    file: UploadFile = File(...),
+    admin: dict = Depends(verify_admin)
+):
+    """Upload a file to a storage bucket"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can upload files")
+        
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
+        
+        # Verify bucket exists
+        try:
+            bucket = service_client.storage.get_bucket(bucket_id)
+        except Exception as e:
+            logger.error(f"Error getting bucket {bucket_id}: {str(e)}")
+            raise HTTPException(status_code=404, detail="Bucket not found")
+        
+        # Get school data to verify URN and get metadata
+        try:
+            school = service_client.table("schools").select("*").eq("urn", school_urn).single().execute()
+            if not school.data:
+                raise HTTPException(status_code=404, detail="School not found")
+        except Exception as e:
+            logger.error(f"Error getting school data: {str(e)}")
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Construct file path
+        file_path = f"{school_urn}/tldraw.json"
+        
+        # Read file content
+        content = await file.read()
+        
+        try:
+            # Upload file with metadata
+            result = service_client.storage.from_(bucket_id).upload(
+                path=file_path,
+                file=content,
+                file_options={
+                    "content-type": "application/json",
+                    "x-upsert": "true"  # Update if exists
+                }
+            )
+            
+            # Update file metadata
+            metadata = {
+                "establishment_name": school.data.get("establishment_name"),
+                "establishment_type": school.data.get("establishment_type"),
+                "size": len(content),
+                "mimetype": "application/json"
+            }
+            
+            # Try to update metadata (this might not be supported by all storage providers)
+            try:
+                service_client.storage.from_(bucket_id).update_file_metadata(
+                    path=file_path,
+                    metadata=metadata
+                )
+            except Exception as metadata_error:
+                logger.warning(f"Could not update file metadata: {str(metadata_error)}")
+            
+            return {
+                "status": "success",
+                "message": "File uploaded successfully",
+                "path": file_path
+            }
+            
+        except Exception as upload_error:
+            logger.error(f"Error uploading file: {str(upload_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload file: {str(upload_error)}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in upload handler: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Export the router

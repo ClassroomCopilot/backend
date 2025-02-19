@@ -6,10 +6,16 @@
 <div class="container mx-auto px-4 py-8">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold">School Files Management</h1>
-        <a href="/api/admin/storage/management" 
-           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700">
-            Back to Storage Management
-        </a>
+        <div class="flex space-x-4">
+            <button onclick="showUploadModal()" 
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                Upload File
+            </button>
+            <a href="/api/admin/storage" 
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700">
+                Back to Storage Management
+            </a>
+        </div>
     </div>
 
     <!-- File List -->
@@ -38,7 +44,7 @@
                         {% for file in files %}
                         <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {{ file.name.split('/')[0] if '/' in file.name else file.name }}
+                                {{ file.name.split('/')[0] }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {{ file.metadata.establishment_name if file.metadata and file.metadata.establishment_name else '-' }}
@@ -47,7 +53,7 @@
                                 {{ file.name }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {{ (file.metadata.size / 1024)|round(1) if file.metadata and file.metadata.size else 0 }} KB
+                                {{ (file.metadata.size / 1024)|round(1) if file.metadata and file.metadata.size else '-' }} KB
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {{ file.updated_at|replace('T', ' ')|replace('Z', '') if file.updated_at else '-' }}
@@ -75,20 +81,93 @@
     </div>
 </div>
 
+<!-- Upload Modal -->
+<div id="uploadModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3 text-center">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Upload School File</h3>
+            <div class="mt-2 px-7 py-3">
+                <form id="uploadForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">School URN</label>
+                        <input type="text" id="schoolUrn" name="schoolUrn" required
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">File</label>
+                        <input type="file" id="fileInput" name="file" required accept=".json"
+                               class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                    <div class="flex justify-end space-x-4">
+                        <button type="button" onclick="closeUploadModal()"
+                                class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            Upload
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+function showUploadModal() {
+    document.getElementById('uploadModal').classList.remove('hidden');
+}
+
+function closeUploadModal() {
+    document.getElementById('uploadModal').classList.add('hidden');
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const schoolUrn = document.getElementById('schoolUrn').value;
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a file');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const response = await fetch(`/api/admin/storage/cc.ccschools.public/upload/${schoolUrn}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            alert('File uploaded successfully');
+            window.location.reload();
+        } else {
+            const error = await response.json();
+            alert(`Upload failed: ${error.detail}`);
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        alert('Upload failed: ' + error.message);
+    }
+    
+    closeUploadModal();
+});
+
 async function viewFile(fileName) {
     try {
-        // Get the signed URL from our backend
         const response = await fetch(`/api/admin/storage/cc.ccschools.public/view/${encodeURIComponent(fileName)}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get file URL');
         }
         
-        // Get the signed URL from the JSON response
         const data = await response.json();
-        
-        // Open in a new tab
         window.open(data.url, '_blank');
     } catch (error) {
         console.error('Error viewing file:', error);
@@ -98,23 +177,14 @@ async function viewFile(fileName) {
 
 async function downloadFile(fileName) {
     try {
-        // Get the signed URL from our backend
         const response = await fetch(`/api/admin/storage/cc.ccschools.public/download/${encodeURIComponent(fileName)}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get file URL');
         }
         
-        // Get the signed URL from the JSON response
         const data = await response.json();
-        
-        // Create a temporary link element
-        const link = document.createElement('a');
-        link.href = data.url;
-        link.download = fileName.split('/').pop(); // Set the download filename
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        window.open(data.url, '_blank');
     } catch (error) {
         console.error('Error downloading file:', error);
         alert('Error downloading file: ' + error.message);
