@@ -167,7 +167,7 @@ async function deleteFile(bucketId, filePath) {
 
 async function downloadFile(filePath) {
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/download/${filePath}`);
+        const response = await fetch(`/api/admin/storage/cc.ccschools/download/${filePath}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get download URL');

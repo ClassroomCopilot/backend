@@ -116,7 +116,6 @@ class BaseRelationship(CommonModel):  # pyre-ignore[13]
         merge_props = ", ".join([f"{x}: ${x}" for x in self._merge_on])
 
         cypher = f"""
-        USE {database}
         MATCH (source:{source_label} {{ {source_pp}: $source_prop }}),
             (target:{target_label} {{ {target_pp}: $target_prop }})
         MERGE (source)-[r:{rel_type} {{ {merge_props} }}]->(target)
@@ -126,8 +125,9 @@ class BaseRelationship(CommonModel):  # pyre-ignore[13]
         """
 
         graph = GraphConnection()
-
-        graph.cypher_write(cypher, params)
+        # Use session with database instead of USE statement
+        with graph.driver.session(database=database) as session:
+            session.run(cypher, params)
 
     @classmethod
     def merge_relationships(
@@ -137,6 +137,7 @@ class BaseRelationship(CommonModel):  # pyre-ignore[13]
         target_type: Optional[Type[BaseNode]] = None,
         source_prop: Optional[str] = None,
         target_prop: Optional[str] = None,
+        database: Optional[str] = 'neo4j'  # Add database parameter
     ) -> None:
         """Merge multiple relationships (of this type) into the database.
 
@@ -149,6 +150,7 @@ class BaseRelationship(CommonModel):  # pyre-ignore[13]
         Args:
             cls (Type[R]): this class
             rels (List[R]): a list of relationships which are instances of this class
+            database (Optional[str]): database to use for the operation
 
         Raises:
             TypeError: If relationships are provided which aren't of this class
@@ -189,7 +191,6 @@ class BaseRelationship(CommonModel):  # pyre-ignore[13]
 
         cypher = f"""
         UNWIND $rel_list AS rel
-        USE {database}
         MATCH (source:{source_label})
         WHERE source.{source_prop} = rel.source_prop
         MATCH (target:{target_label})
@@ -201,8 +202,9 @@ class BaseRelationship(CommonModel):  # pyre-ignore[13]
         """
 
         graph = GraphConnection()
-
-        graph.cypher_write(cypher=cypher, params={"rel_list": rel_list})
+        # Use session with database instead of USE statement
+        with graph.driver.session(database=database) as session:
+            session.run(cypher=cypher, parameters={"rel_list": rel_list})
 
     @classmethod
     def merge_records(

@@ -99,10 +99,10 @@ class SchoolNode(BaseNode):
     phase_of_education: str
     statutory_low_age: float
     statutory_high_age: float
-    religious_character: Optional[str]
+    religious_character: Optional[str] = None
     school_capacity: int
     school_website: str
-    ofsted_rating: Optional[str]
+    ofsted_rating: Optional[str] = None
     
     def to_dict(self):
         return {
@@ -117,10 +117,10 @@ class SchoolNode(BaseNode):
             "phase_of_education": self.phase_of_education,
             "statutory_low_age": self.statutory_low_age,
             "statutory_high_age": self.statutory_high_age,
-            "religious_character": self.religious_character,
+            "religious_character": self.religious_character if self.religious_character not in [None, ''] else None,
             "school_capacity": self.school_capacity,
             "school_website": self.school_website,
-            "ofsted_rating": self.ofsted_rating,
+            "ofsted_rating": self.ofsted_rating if self.ofsted_rating not in [None, ''] else None,
             "created": self.created.isoformat() if self.created else None,
             "merged": self.merged.isoformat() if self.merged else None,
         }

@@ -1,17 +1,7 @@
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
 import os
-import modules.logger_tool as logger
-log_name = 'api_modules_database_tools_init_school_timetable'
-log_dir = os.getenv("LOG_PATH", "/logs")  # Default path as fallback
-logging = logger.get_logger(
-    name=log_name,
-    log_level=os.getenv("LOG_LEVEL", "DEBUG"),
-    log_path=log_dir,
-    log_file=log_name,
-    runtime=True,
-    log_format='default'
-)
+from modules.logger_tool import initialise_logger
+logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
+
 import modules.database.init.init_calendar as init_calendar
 import modules.database.schemas.timetable_neo as timetable_neo
 import modules.database.schemas.relationships.timetable_rels as tt_rels
@@ -22,12 +12,12 @@ from modules.database.tools.filesystem_tools import ClassroomCopilotFilesystem
 from datetime import timedelta, datetime
 import pandas as pd
 
-def create_school_timetable(dataframes, db_name, school_node=None):
-    logging.info(f"Creating school timetable for {db_name}")
+def create_school_timetable_from_dataframes(dataframes, db_name, school_node=None):
+    logger.info(f"Creating school timetable for {db_name}")
     if dataframes is None:
         raise ValueError("Data is required to create the calendar and timetable.")
 
-    logging.info(f"Initialising neo4j connection...")
+    logger.info("Initialising neo4j connection...")
     neon.init_neontology_connection()
 
     # Initialize the filesystem handler
@@ -35,17 +25,17 @@ def create_school_timetable(dataframes, db_name, school_node=None):
 
     school_df = dataframes['school']
     if school_node is None:
-        logging.info(f"School node is None, using school data from dataframe")
+        logger.info("School node is None, using school data from dataframe")
         school_unique_id = school_df[school_df['Identifier'] == 'SchoolID']['Data'].iloc[0]
     else:
-        logging.info(f"School node is not None, using school data from school node: {school_node}")
+        logger.info(f"School node is not None, using school data from school node: {school_node}")
         school_unique_id = school_node.unique_id
-    
+
     terms_df = dataframes['terms']
     weeks_df = dataframes['weeks']
     days_df = dataframes['days']
     periods_df = dataframes['periods']
-    
+
     school_df_year_start = school_df[school_df['Identifier'] == 'AcademicYearStart']['Data'].iloc[0]
     school_df_year_end = school_df[school_df['Identifier'] == 'AcademicYearEnd']['Data'].iloc[0]
     if isinstance(school_df_year_start, str):
@@ -66,14 +56,14 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         'academic_day_nodes': [],
         'academic_period_nodes': []
     }
-    
+
     if school_node:
         # Create the root timetable directory
         _, timetable_path = fs_handler.create_school_timetable_directory(school_node.path)
     else:
         # Create the root timetable directory
         _, timetable_path = fs_handler.create_school_timetable_directory()
-    
+
     # Create AcademicTimetable Node
     school_timetable_unique_id = f"SchoolTimetable_{school_unique_id}_{school_year_start_date.year}_{school_year_end_date.year}"
     school_timetable_node = timetable_neo.SchoolTimetableNode(
@@ -86,9 +76,9 @@ def create_school_timetable(dataframes, db_name, school_node=None):
     # Create the tldraw file for the node
     fs_handler.create_default_tldraw_file(school_timetable_node.path, school_timetable_node.to_dict())
     timetable_nodes['timetable_node'] = school_timetable_node
-    
+
     if school_node:
-        logging.info(f"Creating calendar for {school_unique_id} from Neo4j SchoolNode: {school_node.unique_id}")
+        logger.info(f"Creating calendar for {school_unique_id} from Neo4j SchoolNode: {school_node.unique_id}")
         calendar_nodes = init_calendar.create_calendar(db_name, school_year_start_date, school_year_end_date, attach_to_calendar_node=True, entity_node=school_node)
         # Link the school node to the timetable node
         neon.create_or_merge_neontology_relationship(
@@ -97,7 +87,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         )
         timetable_nodes['calendar_nodes'] = calendar_nodes
     else:
-        logging.info(f"Creating calendar for {school_unique_id} from dataframe SchoolID: {school_unique_id}")
+        logger.info(f"Creating calendar for {school_unique_id} from dataframe SchoolID: {school_unique_id}")
         calendar_nodes = init_calendar.create_calendar(db_name, school_year_start_date, school_year_end_date, attach_to_calendar_node=False, entity_node=None)
 
     # Create AcademicYear nodes for each year within the range
@@ -114,12 +104,12 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         # Create the tldraw file for the node
         fs_handler.create_default_tldraw_file(academic_year_node.path, academic_year_node.to_dict())
         timetable_nodes['academic_year_nodes'].append(academic_year_node)
-        logging.info(f'Created academic year node: {academic_year_node.unique_id}')
+        logger.info(f'Created academic year node: {academic_year_node.unique_id}')
         neon.create_or_merge_neontology_relationship(
             tt_rels.AcademicTimetableHasAcademicYear(source=school_timetable_node, target=academic_year_node),
             database=db_name, operation='merge'
         )
-        logging.info(f"Created school timetable relationship from {school_timetable_node.unique_id} to {academic_year_node.unique_id}")
+        logger.info(f"Created school timetable relationship from {school_timetable_node.unique_id} to {academic_year_node.unique_id}")
 
         # Link the academic year with the corresponding calendar year node
         for year_node in calendar_nodes['calendar_year_nodes']:
@@ -128,7 +118,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     cal_tt_rels.AcademicYearIsCalendarYear(source=academic_year_node, target=year_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created school timetable relationship from {academic_year_node.unique_id} to {year_node.unique_id}")
+                logger.info(f"Created school timetable relationship from {academic_year_node.unique_id} to {year_node.unique_id}")
                 break
 
     # Create Term and TermBreak nodes linked to AcademicYear
@@ -141,7 +131,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         term_start_date = term_row['StartDate']
         if isinstance(term_start_date, pd.Timestamp):
             term_start_date = term_start_date.strftime('%Y-%m-%d')
-        
+
         term_end_date = term_row['EndDate']
         if isinstance(term_end_date, pd.Timestamp):
             term_end_date = term_end_date.strftime('%Y-%m-%d')
@@ -175,7 +165,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         if isinstance(term_node, timetable_neo.AcademicTermNode):
             # Create the tldraw file for the node
             fs_handler.create_default_tldraw_file(term_node.path, term_node.to_dict())
-        logging.info(f'Created academic term break node: {term_node.unique_id}')
+        logger.info(f'Created academic term break node: {term_node.unique_id}')
         timetable_nodes['academic_term_nodes'].append(term_node)
         term_number += 1 # We don't use this but we could
 
@@ -190,7 +180,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     relationship_class(source=academic_year_node, target=term_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created school timetable relationship from {academic_year_node.unique_id} to {term_node.unique_id}")
+                logger.info(f"Created school timetable relationship from {academic_year_node.unique_id} to {term_node.unique_id}")
 
     # Create Week nodes
     academic_week_number = 1
@@ -199,7 +189,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         week_start_date = week_row['WeekStart']
         if isinstance(week_start_date, pd.Timestamp):
             week_start_date = week_start_date.strftime('%Y-%m-%d')
-        
+
         if week_row['WeekType'] == 'Holiday':
             week_node_unique_id = f"{week_row['WeekType']}Week_{school_timetable_unique_id}_Week_{week_row['WeekNumber']}"
             week_node = week_node_class(
@@ -224,7 +214,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
             academic_week_number += 1
         neon.create_or_merge_neontology_node(week_node, database=db_name, operation='merge')
         timetable_nodes['academic_week_nodes'].append(week_node)
-        logging.info(f"Created week node: {week_node.unique_id}")
+        logger.info(f"Created week node: {week_node.unique_id}")
         if isinstance(week_node, timetable_neo.AcademicWeekNode):
             # Create the tldraw file for the node
             fs_handler.create_default_tldraw_file(week_node.path, week_node.to_dict())
@@ -235,13 +225,13 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                         cal_tt_rels.AcademicWeekIsCalendarWeek(source=week_node, target=calendar_node),
                         database=db_name, operation='merge'
                     )
-                    logging.info(f"Created school timetable relationship from {calendar_node.unique_id} to {week_node.unique_id}")
+                    logger.info(f"Created school timetable relationship from {calendar_node.unique_id} to {week_node.unique_id}")
                 elif isinstance(week_node, timetable_neo.HolidayWeekNode):
                     neon.create_or_merge_neontology_relationship(
                         cal_tt_rels.HolidayWeekIsCalendarWeek(source=week_node, target=calendar_node),
                         database=db_name, operation='merge'
                     )
-                    logging.info(f"Created school timetable relationship from {calendar_node.unique_id} to {week_node.unique_id}")
+                    logger.info(f"Created school timetable relationship from {calendar_node.unique_id} to {week_node.unique_id}")
                 break
 
         # Link week node to the correct academic term
@@ -252,7 +242,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     relationship_class(source=term_node, target=week_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created school timetable relationship from {term_node.unique_id} to {week_node.unique_id}")
+                logger.info(f"Created school timetable relationship from {term_node.unique_id} to {week_node.unique_id}")
                 break
 
         # Link week node to the correct academic year
@@ -263,7 +253,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     relationship_class(source=academic_year_node, target=week_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created school timetable relationship from {academic_year_node.unique_id} to {week_node.unique_id}")
+                logger.info(f"Created school timetable relationship from {academic_year_node.unique_id} to {week_node.unique_id}")
                 break
 
     # Create Day nodes
@@ -287,7 +277,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
             'date': datetime.strptime(date_str, '%Y-%m-%d'),
             'day_of_week': datetime.strptime(date_str, '%Y-%m-%d').strftime('%A')
         }
-        
+
         if day_row['DayType'] == 'Academic':  
             day_node_data['academic_day'] = str(academic_day_number)
             day_node_data['day_type'] = day_row['WeekType']
@@ -296,15 +286,15 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                 academic_day=academic_day_number
             )
             day_node_data['path'] = timetable_day_path
-        
+
         day_node = day_node_class(**day_node_data)
-        
+
         for calendar_node in calendar_nodes['calendar_day_nodes']:
             if calendar_node.date == day_node.date:
                 neon.create_or_merge_neontology_node(day_node, database=db_name, operation='merge')
                 timetable_nodes['academic_day_nodes'].append(day_node)
-                logging.info(f"Created day node: {day_node.unique_id}")
-                
+                logger.info(f"Created day node: {day_node.unique_id}")
+
                 if isinstance(day_node, timetable_neo.AcademicDayNode):
                     fs_handler.create_default_tldraw_file(day_node.path, day_node.to_dict())
                     relationship_class = cal_tt_rels.AcademicDayIsCalendarDay
@@ -314,14 +304,14 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     relationship_class = cal_tt_rels.OffTimetableDayIsCalendarDay
                 elif isinstance(day_node, timetable_neo.StaffDayNode):
                     relationship_class = cal_tt_rels.StaffDayIsCalendarDay
-                
+
                 neon.create_or_merge_neontology_relationship(
                     relationship_class(source=day_node, target=calendar_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f'Created relationship from {calendar_node.unique_id} to {day_node.unique_id}')
+                logger.info(f'Created relationship from {calendar_node.unique_id} to {day_node.unique_id}')
                 break
-        
+
         # Link day node to the correct academic week
         for academic_week_node in timetable_nodes['academic_week_nodes']:
             if academic_week_node.start_date <= day_node.date <= (academic_week_node.start_date + timedelta(days=6)):
@@ -342,7 +332,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     relationship_class(source=academic_week_node, target=day_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created relationship from {academic_week_node.unique_id} to {day_node.unique_id}")
+                logger.info(f"Created relationship from {academic_week_node.unique_id} to {day_node.unique_id}")
                 break
 
         # Link day node to the correct academic term
@@ -365,12 +355,12 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     relationship_class(source=term_node, target=day_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created relationship from {term_node.unique_id} to {day_node.unique_id}")
+                logger.info(f"Created relationship from {term_node.unique_id} to {day_node.unique_id}")
                 break
-        
+
         # Create Period nodes for each academic day
         if day_row['DayType'] == 'Academic':
-            logging.info(f"Creating periods for {day_node.unique_id}")
+            logger.info(f"Creating periods for {day_node.unique_id}")
             period_of_day = 1
             academic_or_registration_period_of_day = 1
             for _, period_row in periods_df.iterrows():
@@ -380,10 +370,10 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     'Break': timetable_neo.BreakPeriodNode,
                     'OffTimetable': timetable_neo.OffTimetablePeriodNode
                 }[period_row['PeriodType']]
-                
-                logging.info(f"Creating period node for {period_node_class.__name__} Period: {period_of_day}")
+
+                logger.info(f"Creating period node for {period_node_class.__name__} Period: {period_of_day}")
                 period_node_unique_id = f"{period_node_class.__name__}_{school_timetable_unique_id}_Day_{academic_day_number}_Period_{period_of_day}"
-                logging.debug(f"Period node unique id: {period_node_unique_id}")
+                logger.debug(f"Period node unique id: {period_node_unique_id}")
                 period_node_data = {
                     'unique_id': period_node_unique_id,
                     'name': period_row['PeriodName'],
@@ -391,7 +381,7 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     'start_time': datetime.combine(day_node.date, period_row['StartTime']),
                     'end_time': datetime.combine(day_node.date, period_row['EndTime'])
                 }
-                logging.debug(f"Period node data: {period_node_data}")
+                logger.debug(f"Period node data: {period_node_data}")
                 if period_row['PeriodType'] in ['Academic', 'Registration']:
                     _, timetable_period_path = fs_handler.create_school_timetable_period_directory(
                         timetable_path=timetable_path,
@@ -404,29 +394,29 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                     period_code_formatted = f"{week_type}{day_name_short}{period_code}"
                     period_node_data['period_code'] = period_code_formatted
                     period_node_data['path'] = timetable_period_path
-                    
+
                     academic_or_registration_period_of_day += 1
-                
+
                 period_node = period_node_class(**period_node_data)
                 neon.create_or_merge_neontology_node(period_node, database=db_name, operation='merge')
                 if isinstance(period_node, timetable_neo.AcademicPeriodNode) or isinstance(period_node, timetable_neo.RegistrationPeriodNode):
                     # Create the tldraw file for the node
                     fs_handler.create_default_tldraw_file(period_node.path, period_node.to_dict())
                 timetable_nodes['academic_period_nodes'].append(period_node)
-                logging.info(f'Created period node: {period_node.unique_id}')
-                
+                logger.info(f'Created period node: {period_node.unique_id}')
+
                 relationship_class = {
                     'Academic': tt_rels.AcademicDayHasAcademicPeriod,
                     'Registration': tt_rels.AcademicDayHasRegistrationPeriod,
                     'Break': tt_rels.AcademicDayHasBreakPeriod,
                     'OffTimetable': tt_rels.AcademicDayHasOffTimetablePeriod
                 }[period_row['PeriodType']]
-                
+
                 neon.create_or_merge_neontology_relationship(
                     relationship_class(source=day_node, target=period_node),
                     database=db_name, operation='merge'
                 )
-                logging.info(f"Created relationship from {day_node.unique_id} to {period_node.unique_id}")
+                logger.info(f"Created relationship from {day_node.unique_id} to {period_node.unique_id}")
                 period_of_day += 1 # We don't use this but we could
             academic_day_number += 1 # This is a bit of a hack but it works to keep the directories aligned (reorganise)
         day_number += 1 # We don't use this but we could
@@ -449,10 +439,10 @@ def create_school_timetable(dataframes, db_name, school_node=None):
                             ),
                             database=db_name, operation='merge'
                         )
-                        logging.info(f"Created relationship from {source_node.unique_id} to {target_node.unique_id}")
+                        logger.info(f"Created relationship from {source_node.unique_id} to {target_node.unique_id}")
                     else:
-                        logging.warning(f"Skipped self-referential relationship for node {source_node.unique_id}")
-        
+                        logger.warning(f"Skipped self-referential relationship for node {source_node.unique_id}")
+
         # Relationship maps for different node types
         academic_year_relationship_map = {
             (timetable_neo.AcademicYearNode, timetable_neo.AcademicYearNode): tt_rels.AcademicYearFollowsAcademicYear
@@ -519,16 +509,16 @@ def create_school_timetable(dataframes, db_name, school_node=None):
         sort_and_create_relationships(timetable_nodes['academic_week_nodes'], academic_week_relationship_map, lambda x: x.start_date)
         sort_and_create_relationships(timetable_nodes['academic_day_nodes'], academic_day_relationship_map, lambda x: x.date)
         sort_and_create_relationships(timetable_nodes['academic_period_nodes'], academic_period_relationship_map, lambda x: (x.start_time, x.end_time))
-    
+
     # Call the function with the created timetable nodes
     create_school_timetable_node_sequence_rels(timetable_nodes)
-    
-    logging.info(f'Created timetable: {timetable_nodes["timetable_node"].unique_id}')
+
+    logger.info(f'Created timetable: {timetable_nodes["timetable_node"].unique_id}')
 
     # Log the directory structure after creation
     # root_timetable_directory = fs_handler.root_path  # Access the root directory of the filesystem handler
     # fs_handler.log_directory_structure(root_timetable_directory)
-    
+
     return {
         'school_node': school_node,
         'school_calendar_nodes': calendar_nodes,

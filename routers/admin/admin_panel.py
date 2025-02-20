@@ -1,18 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header, Form, Response, Cookie, File, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+import os
+from modules.logger_tool import initialise_logger
+
+from supabase import create_client, Client
+from modules.auth.supabase_bearer import SupabaseBearer
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, Response, File, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import os
-from datetime import datetime
-from typing import List, Optional
 from pydantic import BaseModel
-from modules.logger_tool import initialise_logger
-from supabase import create_client, Client
-from modules.auth.supabase_bearer import SupabaseBearer, verify_supabase_token
-import jwt
+from typing import Optional
+import json
 import csv
 import io
+
+from modules.database.tools import neontology_tools as neon
+from modules.database.schemas import entity_neo
 from modules.database.admin.school_manager import SchoolManager
+from modules.database.admin.graph_provider import GraphProvider
+
+# Initialize graph provider
+graph_provider = GraphProvider()
 
 logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
 
@@ -976,12 +983,12 @@ async def check_storage(admin: dict = Depends(verify_admin)):
             required_buckets = [
                 {
                     "name": "User Files",
-                    "id": "cc.ccusers.public",
+                    "id": "cc.ccusers",
                     "exists": False
                 },
                 {
                     "name": "School Files",
-                    "id": "cc.ccschools.public",
+                    "id": "cc.ccschools",
                     "exists": False
                 }
             ]
@@ -1023,23 +1030,51 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
         if not admin.get('is_super_admin'):
             raise HTTPException(status_code=403, detail="Only super admins can initialize storage")
 
-        # Create initial service role policy
-        initial_policy = """
-        drop policy if exists "Service role has full access to buckets" on storage.buckets;
-        create policy "Service role has full access to buckets"
-            on storage.buckets for all
-            using (auth.role() = 'service_role')
-            with check (auth.role() = 'service_role');
-        """
-        try:
-            admin_supabase.postgrest.rpc('exec_sql', {'query': initial_policy}).execute()
-        except Exception as e:
-            logger.warning(f"Initial policy creation warning: {str(e)}")
+        # Create a fresh service role client for storage operations
+        service_client = create_client(supabase_url, service_role_key)
+        service_client.headers = {
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json",
+            "X-Client-Info": "supabase-py/0.0.1"
+        }
+        service_client.storage._client.headers.update({
+            "apiKey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json"
+        })
 
-        # Create buckets using storage API
+        # First, ensure the bucket RLS policy exists
+        bucket_policy = """
+        -- First, enable RLS on the buckets table if not already enabled
+        alter table storage.buckets enable row level security;
+
+        -- Drop existing policies to ensure clean slate
+        drop policy if exists "Service role has full access to buckets" on storage.buckets;
+        drop policy if exists "Authenticated users can create buckets" on storage.buckets;
+        drop policy if exists "Bucket creation requires service role" on storage.buckets;
+
+        -- Create service role policy for full access
+        create policy "Service role has full access to buckets"
+        on storage.buckets
+        as permissive
+        for all
+        to authenticated
+        using (auth.role() = 'service_role')
+        with check (auth.role() = 'service_role');
+        """
+
+        try:
+            # Execute bucket policy using service role client
+            service_client.postgrest.rpc('exec_sql', {'query': bucket_policy}).execute()
+            logger.info("Successfully created bucket RLS policy")
+        except Exception as e:
+            logger.warning(f"Bucket policy creation warning (may already exist): {str(e)}")
+
+        # Define buckets to create
         buckets_to_create = [
             {
-                "id": "cc.ccusers.public",
+                "id": "cc.ccusers",
                 "name": "User Files",
                 "public": False,
                 "file_size_limit": 52428800,
@@ -1059,7 +1094,7 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
                 ]
             },
             {
-                "id": "cc.ccschools.public",
+                "id": "cc.ccschools",
                 "name": "School Files",
                 "public": False,
                 "file_size_limit": 52428800,
@@ -1080,9 +1115,9 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             }
         ]
 
-        # Get list of existing buckets
+        # Get list of existing buckets using service role client
         try:
-            all_buckets = admin_supabase.storage.list_buckets()
+            all_buckets = service_client.storage.list_buckets()
             existing_bucket_ids = [bucket.id for bucket in all_buckets]
             logger.debug(f"Found existing buckets: {existing_bucket_ids}")
         except Exception as e:
@@ -1096,10 +1131,10 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
                     logger.info(f"Bucket {bucket['id']} already exists")
                     created_buckets.append(bucket['id'])
                 else:
-                    # Create bucket if it doesn't exist
+                    # Create bucket if it doesn't exist using service role client
                     logger.debug(f"Creating bucket {bucket['id']} with options: {bucket}")
                     try:
-                        response = admin_supabase.storage.create_bucket(
+                        response = service_client.storage.create_bucket(
                             bucket['id'],
                             options={
                                 'public': bucket['public'],
@@ -1121,11 +1156,24 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
         # Create object-level RLS policies
         object_policies = [
             """
+            -- Enable RLS on objects table if not already enabled
+            alter table storage.objects enable row level security;
+
+            -- Drop existing policies
             drop policy if exists "Users can read own files" on storage.objects;
+            drop policy if exists "Users can upload own files" on storage.objects;
+            drop policy if exists "Users can update own files" on storage.objects;
+            drop policy if exists "Users can delete own files" on storage.objects;
+            drop policy if exists "Anyone can read school files" on storage.objects;
+            drop policy if exists "Only admins can manage school files" on storage.objects;
+            drop policy if exists "Service role has full access to objects" on storage.objects;
+            drop policy if exists "Admins can create signed URLs" on storage.objects;
+
+            -- Create user files policies
             create policy "Users can read own files"
                 on storage.objects for select
                 using (
-                    bucket_id = 'cc.ccusers.public'
+                    bucket_id = 'cc.ccusers'
                     and (
                         path_tokens[1] = auth.uid()::text
                         or exists (
@@ -1135,46 +1183,37 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
                         )
                     )
                 );
-            """,
-            """
-            drop policy if exists "Users can upload own files" on storage.objects;
+
             create policy "Users can upload own files"
                 on storage.objects for insert
                 with check (
-                    bucket_id = 'cc.ccusers.public'
+                    bucket_id = 'cc.ccusers'
                     and path_tokens[1] = auth.uid()::text
                 );
-            """,
-            """
-            drop policy if exists "Users can update own files" on storage.objects;
+
             create policy "Users can update own files"
                 on storage.objects for update
                 using (
-                    bucket_id = 'cc.ccusers.public'
+                    bucket_id = 'cc.ccusers'
                     and path_tokens[1] = auth.uid()::text
                 );
-            """,
-            """
-            drop policy if exists "Users can delete own files" on storage.objects;
+
             create policy "Users can delete own files"
                 on storage.objects for delete
                 using (
-                    bucket_id = 'cc.ccusers.public'
+                    bucket_id = 'cc.ccusers'
                     and path_tokens[1] = auth.uid()::text
                 );
-            """,
-            """
-            drop policy if exists "Anyone can read school files" on storage.objects;
+
+            -- Create school files policies
             create policy "Anyone can read school files"
                 on storage.objects for select
-                using (bucket_id = 'cc.ccschools.public');
-            """,
-            """
-            drop policy if exists "Only admins can manage school files" on storage.objects;
+                using (bucket_id = 'cc.ccschools');
+
             create policy "Only admins can manage school files"
                 on storage.objects for all
                 using (
-                    bucket_id = 'cc.ccschools.public'
+                    bucket_id = 'cc.ccschools'
                     and (
                         auth.role() = 'service_role'
                         or exists (
@@ -1185,7 +1224,7 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
                     )
                 )
                 with check (
-                    bucket_id = 'cc.ccschools.public'
+                    bucket_id = 'cc.ccschools'
                     and (
                         auth.role() = 'service_role'
                         or exists (
@@ -1195,16 +1234,14 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
                         )
                     )
                 );
-            """,
-            """
-            drop policy if exists "Service role has full access to objects" on storage.objects;
+
+            -- Create service role policy
             create policy "Service role has full access to objects"
                 on storage.objects for all
                 using (auth.role() = 'service_role')
                 with check (auth.role() = 'service_role');
-            """,
-            """
-            drop policy if exists "Admins can create signed URLs" on storage.objects;
+
+            -- Create signed URL policy
             create policy "Admins can create signed URLs"
                 on storage.objects for select
                 using (
@@ -1217,12 +1254,13 @@ async def initialize_storage(admin: dict = Depends(verify_admin)):
             """
         ]
 
-        # Apply object-level policies
+        # Apply object-level policies using service role client
         for policy in object_policies:
             try:
-                admin_supabase.postgrest.rpc('exec_sql', {'query': policy}).execute()
+                service_client.postgrest.rpc('exec_sql', {'query': policy}).execute()
+                logger.info("Successfully created object RLS policies")
             except Exception as e:
-                logger.warning(f"Object policy creation warning: {str(e)}")
+                logger.warning(f"Object policy creation warning (may already exist): {str(e)}")
         
         return {
             "status": "success", 
@@ -1266,7 +1304,7 @@ async def storage_management(request: Request, admin: dict = Depends(verify_admi
                 'updated_at': bucket.updated_at,
                 'file_size_limit': bucket.file_size_limit,
                 'allowed_mime_types': bucket.allowed_mime_types
-            } for bucket in buckets if bucket.id in ['cc.ccusers.public', 'cc.ccschools.public']]
+            } for bucket in buckets if bucket.id in ['cc.ccusers', 'cc.ccschools']]
             
             logger.debug(f"Found buckets: {buckets_data}")
             
@@ -1440,10 +1478,10 @@ async def manage_school_storage(request: Request, admin: dict = Depends(verify_a
         
         # Get list of files from the schools bucket
         try:
-            logger.info(f"Listing files from Supabase storage at URL {supabase_url}, bucket: cc.ccschools.public")
+            logger.info(f"Listing files from Supabase storage at URL {supabase_url}, bucket: cc.ccschools")
             
             # First, list all root level items
-            files = service_client.storage.from_('cc.ccschools.public').list()
+            files = service_client.storage.from_('cc.ccschools').list()
             logger.debug(f"Root level files from Supabase: {files}")
             
             # Process files to ensure we have complete path information
@@ -1467,7 +1505,7 @@ async def manage_school_storage(request: Request, admin: dict = Depends(verify_a
                 if not file['name'].endswith('tldraw.json'):
                     try:
                         # List contents of this folder
-                        subfiles = service_client.storage.from_('cc.ccschools.public').list(school_urn)
+                        subfiles = service_client.storage.from_('cc.ccschools').list(school_urn)
                         logger.debug(f"Subfiles for {school_urn}: {subfiles}")
                         
                         for subfile in subfiles:
@@ -1757,6 +1795,517 @@ async def upload_file(
         raise
     except Exception as e:
         logger.error(f"Error in upload handler: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/schools/{school_id}/create-private-database")
+async def create_private_database(school_id: str, admin: dict = Depends(verify_admin)):
+    """Create private database for school"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can create private databases")
+        
+        # Get school data
+        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Create school manager and create private database
+        school_manager = SchoolManager()
+        result = school_manager.create_private_database(school.data)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
+            
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating private database: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/schools/{school_id}/create-basic-structure")
+async def create_basic_structure(school_id: str, admin: dict = Depends(verify_admin)):
+    """Create basic school structure in both public and private databases"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can create school structure")
+        
+        # Get school data
+        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Create school node
+        school_node = entity_neo.SchoolNode(
+            unique_id=f"School_{school.data['urn']}",
+            path=f"/schools/cc.ccschools/{school.data['urn']}",
+            urn=school.data['urn'],
+            establishment_number=school.data['establishment_number'],
+            establishment_name=school.data['establishment_name'],
+            establishment_type=school.data['establishment_type'],
+            establishment_status=school.data['establishment_status'],
+            phase_of_education=school.data['phase_of_education'] if school.data['phase_of_education'] not in [None, ''] else None,
+            statutory_low_age=int(school.data['statutory_low_age']) if school.data.get('statutory_low_age') is not None else 0,
+            statutory_high_age=int(school.data['statutory_high_age']) if school.data.get('statutory_high_age') is not None else 0,
+            religious_character=school.data.get('religious_character') if school.data.get('religious_character') not in [None, ''] else None,
+            school_capacity=int(school.data['school_capacity']) if school.data.get('school_capacity') is not None else 0,
+            school_website=school.data.get('school_website', ''),
+            ofsted_rating=school.data.get('ofsted_rating') if school.data.get('ofsted_rating') not in [None, ''] else None
+        )
+        
+        # Create school manager
+        school_manager = SchoolManager()
+        
+        # Ensure school node exists in the private database
+        with school_manager.neontology as neo:
+            # Create/merge in private database
+            private_db_name = f"cc.ccschools.{school.data['urn']}"
+            neo.create_or_merge_node(school_node, database=private_db_name, operation='merge')
+        
+        # Create structure in public database
+        public_result = school_manager.create_basic_structure(school_node, "cc.ccschools")
+        if public_result["status"] == "error":
+            raise HTTPException(status_code=500, detail=f"Error creating public structure: {public_result['message']}")
+        
+        # Create structure in private database
+        private_result = school_manager.create_basic_structure(school_node, private_db_name)
+        if private_result["status"] == "error":
+            raise HTTPException(status_code=500, detail=f"Error creating private structure: {private_result['message']}")
+        
+        return {
+            "status": "success",
+            "message": "School structure created in both databases",
+            "public_result": public_result,
+            "private_result": private_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating school structure: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/schools/{school_id}/create-detailed-structure")
+async def create_detailed_structure(
+    school_id: str,
+    file: UploadFile = File(...),
+    admin: dict = Depends(verify_admin)
+):
+    """Create detailed school structure from Excel file"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can create detailed structure")
+        
+        # Get school data
+        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Create school node
+        school_node = entity_neo.SchoolNode(
+            unique_id=f"School_{school.data['urn']}",
+            urn=school.data['urn'],
+            establishment_number=school.data['establishment_number'],
+            establishment_name=school.data['establishment_name'],
+            establishment_type=school.data['establishment_type'],
+            establishment_status=school.data['establishment_status'],
+            phase_of_education=school.data['phase_of_education'],
+            statutory_low_age=int(school.data['statutory_low_age']) if school.data.get('statutory_low_age') is not None else 0,
+            statutory_high_age=int(school.data['statutory_high_age']) if school.data.get('statutory_high_age') is not None else 0,
+            religious_character=school.data.get('religious_character') if school.data.get('religious_character') not in [None, ''] else None,
+            school_capacity=int(school.data['school_capacity']) if school.data.get('school_capacity') is not None else 0,
+            school_website=school.data.get('school_website', ''),
+            ofsted_rating=school.data.get('ofsted_rating') if school.data.get('ofsted_rating') not in [None, ''] else None,
+            path=f"/schools/cc.ccschools/{school.data['urn']}"
+        )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Create school manager
+        school_manager = SchoolManager()
+        
+        # Create detailed structure in public database
+        public_result = school_manager.create_detailed_structure(school_node, "cc.ccschools", content)
+        if public_result["status"] == "error":
+            raise HTTPException(status_code=500, detail=f"Error creating public detailed structure: {public_result['message']}")
+        
+        # Create detailed structure in private database
+        private_db_name = f"cc.ccschools.{school.data['urn']}"
+        private_result = school_manager.create_detailed_structure(school_node, private_db_name, content)
+        if private_result["status"] == "error":
+            raise HTTPException(status_code=500, detail=f"Error creating private detailed structure: {private_result['message']}")
+        
+        return {
+            "status": "success",
+            "message": "Detailed structure created in both databases",
+            "public_result": public_result,
+            "private_result": private_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating detailed structure: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+def check_private_school_database(school_urn):
+    """Checks if private database exists for school"""
+    try:
+        private_db_name = f"cc.ccschools.{school_urn}"
+        with graph_provider.neontology as neo:
+            result = neo.run_query("SHOW DATABASES", {})
+            databases = [record["name"] for record in result]
+            exists = private_db_name in databases
+            return {"exists": exists}
+    except Exception as e:
+        logger.error(f"Error checking private database: {str(e)}")
+        raise
+
+@router.get("/schools/{school_id}/check-private-school-database")
+async def check_private_school_database_endpoint(school_id: str, admin: dict = Depends(verify_admin)):
+    """Check if private database exists for school"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can check private database")
+
+        # Get school data
+        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+
+        return check_private_school_database(school.data['urn'])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking private database: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/schools/{school_id}/check-structure-status")
+async def check_structure_status(school_id: str, admin: dict = Depends(verify_admin)):
+    """Check the structure status for a school in both public and private databases"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can check structure status")
+        
+        # Get basic structure status
+        basic_status = await check_basic_structure(school_id, admin)
+        
+        # Get detailed structure status
+        detailed_status = await check_detailed_structure(school_id, admin)
+        
+        # Combine results
+        return {
+            "public_database": {
+                "basic": basic_status["public_database"],
+                "detailed": detailed_status["public_database"]
+            },
+            "private_database": {
+                "exists": basic_status["private_database"]["exists"],
+                "basic": basic_status["private_database"]["status"],
+                "detailed": detailed_status["private_database"]["status"]
+            }
+        }
+            
+    except Exception as e:
+        logger.error(f"Error checking structure status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/schema")
+async def schema_page(request: Request, admin: dict = Depends(verify_admin)):
+    """Schema management interface"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can manage schema")
+            
+        return templates.TemplateResponse(
+            "admin/schema_details.html",
+            {
+                "request": request,
+                "admin": admin
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error in schema management: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/check-schema")
+async def check_schema(admin: dict = Depends(verify_admin)):
+    """Check schema status"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can check schema")
+            
+        # Get schema status from both databases
+        public_schema = graph_provider.check_schema_status("cc.ccschools")
+        
+        # Combine results
+        combined_schema = {
+            "constraints": list(set(public_schema["constraints"])),
+            "constraints_count": len(set(public_schema["constraints"])),
+            "constraints_valid": public_schema["constraints_valid"],
+            
+            "indexes": list(set(public_schema["indexes"])),
+            "indexes_count": len(set(public_schema["indexes"])),
+            "indexes_valid": public_schema["indexes_valid"],
+            
+            "labels": list(set(public_schema["labels"])),
+            "labels_count": len(set(public_schema["labels"])),
+            "labels_valid": public_schema["labels_valid"]
+        }
+        
+        return JSONResponse(content=combined_schema)
+    except Exception as e:
+        logger.error(f"Error checking schema: {str(e)}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@router.get("/schema-definition")
+async def get_schema_definition(admin: dict = Depends(verify_admin)):
+    """Get schema definition"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can view schema definition")
+            
+        schema_info = graph_provider.get_schema_info()
+        return JSONResponse(content=schema_info)
+    except Exception as e:
+        logger.error(f"Error getting schema definition: {str(e)}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@router.post("/initialize-schema")
+async def initialize_schema(admin: dict = Depends(verify_admin)):
+    """Initialize schema for both databases"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can initialize schema")
+            
+        # Initialize schema for both databases
+        graph_provider.initialize_schema("cc.ccschools")
+        return JSONResponse(content={"message": "Schema initialized successfully"})
+    except Exception as e:
+        logger.error(f"Error initializing schema: {str(e)}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@router.get("/schools/{school_id}/check-basic-structure")
+async def check_basic_structure(school_id: str, admin: dict = Depends(verify_admin)):
+    """Check if basic structure exists for a school"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can check structure status")
+        
+        # Get school data
+        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Create graph provider for Neo4j operations
+        provider = GraphProvider()
+        
+        # Generate the unique ID for the school
+        school_unique_id = f"School_{school.data['urn']}"
+        
+        # Check basic structure in public database
+        with provider.neontology as neo:
+            basic_query = """
+                MATCH (s:School {unique_id: $school_id})
+                
+                // Get all nodes connected to school for debugging
+                CALL {
+                    WITH s
+                    MATCH (n)
+                    WHERE n.unique_id CONTAINS s.unique_id
+                    RETURN COLLECT({label: labels(n)[0], id: n.unique_id}) as debug_nodes
+                }
+                
+                // Check Department Structure
+                OPTIONAL MATCH (dept_struct:DepartmentStructure)
+                WHERE dept_struct.unique_id = $dept_struct_id
+                WITH s, debug_nodes, {
+                    exists: dept_struct IS NOT NULL,
+                    node_id: dept_struct.unique_id
+                } as dept_structure
+                
+                // Check Curriculum Structure
+                OPTIONAL MATCH (curr_struct:CurriculumStructure)
+                WHERE curr_struct.unique_id = $curr_struct_id
+                WITH s, debug_nodes, dept_structure, {
+                    exists: curr_struct IS NOT NULL,
+                    node_id: curr_struct.unique_id
+                } as curr_structure
+                
+                // Check Pastoral Structure
+                OPTIONAL MATCH (past_struct:PastoralStructure)
+                WHERE past_struct.unique_id = $past_struct_id
+                WITH debug_nodes, dept_structure, curr_structure, {
+                    exists: past_struct IS NOT NULL,
+                    node_id: past_struct.unique_id
+                } as past_structure
+                
+                // Return structure information
+                RETURN {
+                    has_basic: dept_structure.exists AND curr_structure.exists AND past_structure.exists,
+                    department_structure: dept_structure,
+                    curriculum_structure: curr_structure,
+                    pastoral_structure: past_structure,
+                    debug_nodes: debug_nodes
+                } as status
+            """
+            
+            # Use GraphNamingProvider to generate correct IDs
+            params = {
+                "school_id": school_unique_id,
+                "dept_struct_id": f"DepartmentStructure_{school_unique_id}",
+                "curr_struct_id": f"CurriculumStructure_{school_unique_id}",
+                "past_struct_id": f"PastoralStructure_{school_unique_id}"
+            }
+            
+            # Run query in public database
+            public_result = neo.run_query(basic_query, params, "cc.ccschools")
+            public_status = public_result[0]["status"] if public_result else {"has_basic": False}
+            
+            # Check private database if it exists
+            private_db_name = f"cc.ccschools.{school.data['urn']}"
+            private_exists = False
+            private_status = None
+            
+            # Check if private database exists using Neontology
+            db_result = neo.run_query("SHOW DATABASES", {})
+            databases = [record["name"] for record in db_result]
+            private_exists = private_db_name in databases
+            
+            if private_exists:
+                private_result = neo.run_query(basic_query, params, private_db_name)
+                private_status = private_result[0]["status"] if private_result else {"has_basic": False}
+            
+            return {
+                "public_database": public_status,
+                "private_database": {
+                    "exists": private_exists,
+                    "status": private_status if private_exists else None
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Error checking basic structure: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/schools/{school_id}/check-detailed-structure")
+async def check_detailed_structure(school_id: str, admin: dict = Depends(verify_admin)):
+    """Check if detailed structure exists for a school"""
+    try:
+        if not admin.get('is_super_admin'):
+            raise HTTPException(status_code=403, detail="Only super admins can check structure status")
+        
+        # Get school data
+        school = admin_supabase.table("schools").select("*").eq("id", school_id).single().execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Create graph provider for Neo4j operations
+        provider = GraphProvider()
+        
+        # Generate the unique ID for the school
+        school_unique_id = f"School_{school.data['urn']}"
+        
+        # Check detailed structure in public database
+        with provider.neontology as neo:
+            detailed_query = """
+                MATCH (s:School {unique_id: $school_id})
+                
+                // Get all nodes connected to school for debugging
+                CALL {
+                    WITH s
+                    MATCH (n)
+                    WHERE n.unique_id CONTAINS s.unique_id
+                    RETURN COLLECT({label: labels(n)[0], id: n.unique_id}) as debug_nodes
+                }
+                
+                // Check Department Structure and Departments
+                OPTIONAL MATCH (dept_struct:DepartmentStructure)
+                WHERE dept_struct.unique_id = $dept_struct_id
+                OPTIONAL MATCH (dept:Department)
+                WHERE dept.unique_id STARTS WITH 'Department_' + s.unique_id
+                WITH s, debug_nodes, {
+                    exists: dept_struct IS NOT NULL,
+                    has_departments: COUNT(dept) > 0,
+                    department_count: COUNT(dept)
+                } as dept_structure
+                
+                // Check Curriculum Structure and Key Stages
+                OPTIONAL MATCH (curr_struct:CurriculumStructure)
+                WHERE curr_struct.unique_id = $curr_struct_id
+                OPTIONAL MATCH (ks:KeyStage)
+                WHERE ks.unique_id STARTS WITH 'KeyStage_' + s.unique_id
+                WITH s, debug_nodes, dept_structure, {
+                    exists: curr_struct IS NOT NULL,
+                    has_key_stages: COUNT(ks) > 0,
+                    key_stage_count: COUNT(ks)
+                } as curr_structure
+                
+                // Check Pastoral Structure and Year Groups
+                OPTIONAL MATCH (past_struct:PastoralStructure)
+                WHERE past_struct.unique_id = $past_struct_id
+                OPTIONAL MATCH (yg:YearGroup)
+                WHERE yg.unique_id STARTS WITH 'YearGroup_' + s.unique_id
+                WITH debug_nodes, dept_structure, curr_structure, {
+                    exists: past_struct IS NOT NULL,
+                    has_year_groups: COUNT(yg) > 0,
+                    year_group_count: COUNT(yg)
+                } as past_structure
+                
+                // Return structure information
+                RETURN {
+                    has_detailed: 
+                        dept_structure.exists AND dept_structure.has_departments AND
+                        curr_structure.exists AND curr_structure.has_key_stages AND
+                        past_structure.exists AND past_structure.has_year_groups,
+                    department_structure: dept_structure,
+                    curriculum_structure: curr_structure,
+                    pastoral_structure: past_structure,
+                    debug_nodes: debug_nodes
+                } as status
+            """
+            
+            # Use GraphNamingProvider to generate correct IDs
+            params = {
+                "school_id": school_unique_id,
+                "dept_struct_id": f"DepartmentStructure_{school_unique_id}",
+                "curr_struct_id": f"CurriculumStructure_{school_unique_id}",
+                "past_struct_id": f"PastoralStructure_{school_unique_id}"
+            }
+            
+            # Run query in public database
+            public_result = neo.run_query(detailed_query, params, "cc.ccschools")
+            public_status = public_result[0]["status"] if public_result else {"has_detailed": False}
+            
+            # Check private database if it exists
+            private_db_name = f"cc.ccschools.{school.data['urn']}"
+            private_exists = False
+            private_status = None
+            
+            try:
+                with provider.neontology.driver.session() as session:
+                    result = session.run("SHOW DATABASES")
+                    databases = [record["name"] for record in result]
+                    private_exists = private_db_name in databases
+                    
+                    if private_exists:
+                        private_result = neo.run_query(detailed_query, params, private_db_name)
+                        private_status = private_result[0]["status"] if private_result else {"has_detailed": False}
+            except Exception as e:
+                logger.warning(f"Error checking private database: {str(e)}")
+            
+            return {
+                "public_database": public_status,
+                "private_database": {
+                    "exists": private_exists,
+                    "status": private_status if private_exists else None
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Error checking detailed structure: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Export the router

@@ -139,7 +139,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     formData.append('file', file);
     
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/upload/${schoolUrn}`, {
+        const response = await fetch(`/api/admin/storage/cc.ccschools/upload/${schoolUrn}`, {
             method: 'POST',
             body: formData
         });
@@ -161,7 +161,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
 
 async function viewFile(fileName) {
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/view/${encodeURIComponent(fileName)}`);
+        const response = await fetch(`/api/admin/storage/cc.ccschools/view/${encodeURIComponent(fileName)}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get file URL');
@@ -177,7 +177,7 @@ async function viewFile(fileName) {
 
 async function downloadFile(fileName) {
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/download/${encodeURIComponent(fileName)}`);
+        const response = await fetch(`/api/admin/storage/cc.ccschools/download/${encodeURIComponent(fileName)}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get file URL');
@@ -197,7 +197,7 @@ async function deleteFile(fileName) {
     }
     
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/objects/${encodeURIComponent(fileName)}`, {
+        const response = await fetch(`/api/admin/storage/cc.ccschools/objects/${encodeURIComponent(fileName)}`, {
             method: 'DELETE'
         });
         

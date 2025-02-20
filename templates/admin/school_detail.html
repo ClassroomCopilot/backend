@@ -205,21 +205,54 @@
                 <h3 class="text-lg font-semibold">Graph Database Management</h3>
             </div>
             <div class="grid grid-cols-1 gap-4">
+                <!-- Database Operations -->
                 <div class="p-4 bg-purple-50 rounded-lg">
                     <div class="mb-4">
-                        <h4 class="text-sm font-medium text-purple-800 mb-2">Advanced Operations</h4>
-                        <p class="text-sm text-gray-600">Manage school node in the graph database</p>
+                        <h4 class="text-sm font-medium text-purple-800 mb-2">Database Operations</h4>
+                        <p class="text-sm text-gray-600">Manage school databases and structure</p>
                     </div>
-                    <div class="space-y-2">
-                        <!-- Placeholder for future functionality -->
-                        <button disabled
-                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-300 cursor-not-allowed">
-                            Create School Database
-                        </button>
-                        <button disabled
-                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-300 cursor-not-allowed ml-2">
-                            Build School
-                        </button>
+                    <div class="space-y-4">
+                        <!-- Private Database Creation -->
+                        <div>
+                            <h5 class="text-sm font-medium text-purple-700 mb-2">Private School Database</h5>
+                            <div id="privateDbStatus" class="mb-2">
+                                <p class="text-sm text-gray-600">Checking status...</p>
+                            </div>
+                            <button onclick="createPrivateDatabase()"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                                Create Private Database
+                            </button>
+                        </div>
+
+                        <!-- Basic Structure Creation -->
+                        <div>
+                            <h5 class="text-sm font-medium text-purple-700 mb-2">Basic School Structure</h5>
+                            <div id="basicStructureStatus" class="mb-2">
+                                <p class="text-sm text-gray-600">Checking status...</p>
+                            </div>
+                            <button onclick="createBasicStructure()"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                                Create Basic Structure
+                            </button>
+                        </div>
+
+                        <!-- Detailed Structure Upload -->
+                        <div>
+                            <h5 class="text-sm font-medium text-purple-700 mb-2">Detailed School Structure</h5>
+                            <div id="detailedStructureStatus" class="mb-2">
+                                <p class="text-sm text-gray-600">Upload Excel file to create detailed structure</p>
+                            </div>
+                            <form id="structureUploadForm" class="space-y-2">
+                                <input type="file" 
+                                       id="structureFile" 
+                                       accept=".xlsx,.xls"
+                                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100">
+                                <button type="submit"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                                    Upload and Process
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -337,7 +370,7 @@ document.addEventListener('DOMContentLoaded', checkGraphStatus);
 // Add the file operation functions
 async function viewFile(filePath) {
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/view/${filePath}`);
+        const response = await fetch(`/api/admin/storage/cc.ccschools/view/${filePath}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get file URL');
@@ -353,7 +386,7 @@ async function viewFile(filePath) {
 
 async function downloadFile(filePath) {
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/download/${filePath}`);
+        const response = await fetch(`/api/admin/storage/cc.ccschools/download/${filePath}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to get file URL');
@@ -373,7 +406,7 @@ async function deleteFile(filePath) {
     }
     
     try {
-        const response = await fetch(`/api/admin/storage/cc.ccschools.public/objects/${filePath}`, {
+        const response = await fetch(`/api/admin/storage/cc.ccschools/objects/${filePath}`, {
             method: 'DELETE'
         });
         
@@ -389,5 +422,238 @@ async function deleteFile(filePath) {
         alert('Error deleting file: ' + error.message);
     }
 }
+
+async function createPrivateDatabase() {
+    if (!confirm('Are you sure you want to create a private database for this school?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/create-private-database`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            alert('Private database created successfully');
+            checkDatabaseStatus();
+        } else {
+            alert('Failed to create private database: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while creating private database');
+    }
+}
+
+async function createBasicStructure() {
+    if (!confirm('Are you sure you want to create the basic school structure?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/create-basic-structure`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            alert('Basic structure created successfully');
+            checkStructureStatus();
+        } else {
+            alert('Failed to create basic structure: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while creating basic structure');
+    }
+}
+
+document.getElementById('structureUploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('structureFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select an Excel file');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to process this file and create detailed school structure?')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/create-detailed-structure`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            alert('Detailed structure created successfully');
+            checkStructureStatus();
+        } else {
+            alert('Failed to create detailed structure: ' + result.detail);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while creating detailed structure');
+    }
+});
+
+async function checkDatabaseStatus() {
+    try {
+        const statusElement = document.getElementById('privateDbStatus');
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/check-private-school-database`);
+        const result = await response.json();
+        
+        if (response.ok) {
+            statusElement.innerHTML = `
+                <p class="text-sm ${result.exists ? 'text-green-600' : 'text-yellow-600'}">
+                    ${result.exists ? 'Private database exists' : 'Private database not created'}
+                </p>
+            `;
+        } else {
+            statusElement.innerHTML = `
+                <p class="text-sm text-red-600">
+                    Error checking database status: ${result.detail}
+                </p>
+            `;
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('privateDbStatus').innerHTML = `
+            <p class="text-sm text-red-600">
+                Error checking database status
+            </p>
+        `;
+    }
+}
+
+async function checkStructureStatus() {
+    try {
+        const basicStatusElement = document.getElementById('basicStructureStatus');
+        const detailedStatusElement = document.getElementById('detailedStructureStatus');
+        
+        const response = await fetch(`/api/admin/schools/{{ school.id }}/check-structure-status`);
+        const result = await response.json();
+        
+        if (response.ok) {
+            // Check public database structure
+            const publicStatus = result.public_database;
+            const privateStatus = result.private_database;
+            
+            // Format status messages
+            const publicBasicStatus = publicStatus?.basic_structure ? 'exists' : 'missing';
+            const privateBasicStatus = privateStatus?.exists && privateStatus?.structure?.basic_structure ? 'exists' : 'missing';
+            const publicDetailedStatus = publicStatus?.detailed_structure ? 'exists' : 'missing';
+            const privateDetailedStatus = privateStatus?.exists && privateStatus?.structure?.detailed_structure ? 'exists' : 'missing';
+            
+            // Update basic structure status
+            basicStatusElement.innerHTML = `
+                <div class="space-y-1">
+                    <p class="text-sm font-medium">Structure Status:</p>
+                    <p class="text-sm ${publicBasicStatus === 'exists' ? 'text-green-600' : 'text-yellow-600'}">
+                        Public Database: ${publicBasicStatus === 'exists' ? '✓ Basic structure exists' : '⚠ Basic structure missing'}
+                    </p>
+                    ${privateStatus?.exists ? `
+                        <p class="text-sm ${privateBasicStatus === 'exists' ? 'text-green-600' : 'text-yellow-600'}">
+                            Private Database: ${privateBasicStatus === 'exists' ? '✓ Basic structure exists' : '⚠ Basic structure missing'}
+                        </p>
+                    ` : ''}
+                </div>
+            `;
+            
+            // Update detailed structure status
+            detailedStatusElement.innerHTML = `
+                <div class="space-y-1">
+                    <p class="text-sm font-medium">Structure Status:</p>
+                    <p class="text-sm ${publicDetailedStatus === 'exists' ? 'text-green-600' : 'text-gray-600'}">
+                        Public Database: ${publicDetailedStatus === 'exists' ? '✓ Detailed structure exists' : 'Upload Excel file to create detailed structure'}
+                    </p>
+                    ${privateStatus?.exists ? `
+                        <p class="text-sm ${privateDetailedStatus === 'exists' ? 'text-green-600' : 'text-gray-600'}">
+                            Private Database: ${privateDetailedStatus === 'exists' ? '✓ Detailed structure exists' : 'Upload Excel file to create detailed structure'}
+                        </p>
+                    ` : ''}
+                </div>
+            `;
+            
+            // Get buttons and form elements
+            const createBasicBtn = document.querySelector('button[onclick="createBasicStructure()"]');
+            const uploadDetailedForm = document.getElementById('structureUploadForm');
+            const fileInput = uploadDetailedForm?.querySelector('input[type="file"]');
+            const submitButton = uploadDetailedForm?.querySelector('button[type="submit"]');
+            
+            // Enable/disable basic structure button
+            // Only enable if either database is missing basic structure
+            if (createBasicBtn) {
+                const shouldDisableBasic = publicBasicStatus === 'exists' && (!privateStatus?.exists || privateBasicStatus === 'exists');
+                createBasicBtn.disabled = shouldDisableBasic;
+                if (shouldDisableBasic) {
+                    createBasicBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                } else {
+                    createBasicBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
+            
+            // Enable/disable detailed structure upload
+            // Enable if basic structure exists in public database
+            if (uploadDetailedForm) {
+                const shouldEnableDetailed = publicBasicStatus === 'exists';
+                
+                if (fileInput) {
+                    fileInput.disabled = !shouldEnableDetailed;
+                    if (!shouldEnableDetailed) {
+                        fileInput.classList.add('opacity-50', 'cursor-not-allowed');
+                    } else {
+                        fileInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                }
+                
+                if (submitButton) {
+                    submitButton.disabled = !shouldEnableDetailed;
+                    if (!shouldEnableDetailed) {
+                        submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    } else {
+                        submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                }
+            }
+        } else {
+            const errorMessage = `
+                <p class="text-sm text-red-600">
+                    Error checking structure status: ${result.detail || 'Unknown error'}
+                </p>
+            `;
+            basicStatusElement.innerHTML = errorMessage;
+            detailedStatusElement.innerHTML = errorMessage;
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        const errorMessage = `
+            <p class="text-sm text-red-600">
+                Error checking structure status: ${error.message || 'Unknown error'}
+            </p>
+        `;
+        document.getElementById('basicStructureStatus').innerHTML = errorMessage;
+        document.getElementById('detailedStructureStatus').innerHTML = errorMessage;
+    }
+}
+
+// Check status on page load
+document.addEventListener('DOMContentLoaded', () => {
+    checkGraphStatus();
+    checkDatabaseStatus();
+    checkStructureStatus();
+});
 </script>
 {% endblock %} 

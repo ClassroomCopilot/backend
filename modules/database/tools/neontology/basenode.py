@@ -57,15 +57,16 @@ class BaseNode(CommonModel):  # pyre-ignore[13]
         all_labels = [self.__primarylabel__] + self.__secondarylabels__
 
         cypher = f"""
-        USE {database}
         CREATE (n:{":".join(all_labels)} {{ {self.__primaryproperty__}: $pp }})
         SET n += $all_props
         RETURN n
         """
         graph = GraphConnection()
-        result = graph.cypher_write_single(cypher, params)
-        
-        return self.__class__(**dict(result["n"]))
+        with graph.driver.session(database=database) as session:
+            result = session.run(cypher, params).single()
+            if result:
+                return self.__class__(**dict(result["n"]))
+            return None
 
     def merge(self, database: str = 'neo4j') -> None:
         """Merge this node into the graph."""
@@ -75,7 +76,6 @@ class BaseNode(CommonModel):  # pyre-ignore[13]
         all_labels = [self.__primarylabel__] + self.__secondarylabels__
 
         cypher = f"""
-        USE {database}
         MERGE (n:{":".join(all_labels)} {{ {self.__primaryproperty__}: $pp }})
         ON MATCH SET n += $set_on_match
         ON CREATE SET n += $set_on_create
@@ -84,9 +84,11 @@ class BaseNode(CommonModel):  # pyre-ignore[13]
         """
 
         graph = GraphConnection()
-        result = graph.cypher_write_single(cypher, params)
-
-        return self.__class__(**dict(result["n"]))
+        with graph.driver.session(database=database) as session:
+            result = session.run(cypher, params).single()
+            if result:
+                return self.__class__(**dict(result["n"]))
+            return None
 
     @classmethod
     def create_nodes(cls: Type[B], nodes: List[B]) -> List[Union[str, int]]:
