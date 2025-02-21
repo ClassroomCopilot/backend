@@ -189,7 +189,7 @@ async def admin_dashboard(request: Request):
         logger.debug(f"Admin dashboard data: {admin_data}")
             
         return templates.TemplateResponse(
-            "admin/dashboard.html",
+            "/dashboard/index.html",
             {
                 "request": request,
                 "admin": admin_data,

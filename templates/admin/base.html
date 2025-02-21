@@ -11,6 +11,7 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-xl font-bold">ClassroomCopilot Admin</h1>
+                    {% if request.url.path != '/api/admin/login' %}
                     <div class="mt-2 space-x-4">
                         <a href="/api/admin" class="hover:text-gray-300">Dashboard</a>
                         <a href="/api/admin/users" class="hover:text-gray-300">Users</a>
@@ -20,6 +21,7 @@
                         <a href="/api/admin/storage" class="hover:text-gray-300">Storage</a>
                         {% endif %}
                     </div>
+                    {% endif %}
                 </div>
                 {% if request.url.path != '/api/admin/login' %}
                 <div class="flex items-center">

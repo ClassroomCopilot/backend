@@ -1,62 +1,58 @@
 import os
-from modules.logger_tool import initialise_logger
-from supabase import create_client
+from typing import Dict, List, Optional, BinaryIO
 import json
 import pandas as pd
-
-import modules.database.init.xl_tools as xl
+from modules.logger_tool import initialise_logger
 from modules.database.tools.filesystem_tools import ClassroomCopilotFilesystem
 import modules.database.tools.neo4j_driver_tools as driver_tools
 import modules.database.tools.neo4j_session_tools as session_tools
 from modules.database.admin.neontology_provider import NeontologyProvider
-from modules.database.admin.graph_provider import GraphNamingProvider, NodeLabels, RelationshipTypes, PropertyKeys
+from modules.database.admin.graph_provider import GraphNamingProvider
 from modules.database.schemas import entity_neo, curriculum_neo
 from modules.database.schemas.relationships import curricular_relationships, entity_relationships, entity_curriculum_rels
+from modules.database.supabase.utils.storage import StorageManager
 
-class SchoolManager:
+class SchoolAdminService:
     def __init__(self):
-        self.driver = driver_tools.get_driver()
         self.logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
+        self.driver = driver_tools.get_driver()
         self.neontology = NeontologyProvider()
         self.graph_naming = GraphNamingProvider()
-        
-        # Initialize Supabase client with correct URL and service role key
-        supabase_url = os.getenv("SUPABASE_BACKEND_URL")
-        service_role_key = os.getenv("SERVICE_ROLE_KEY")
-        
-        self.logger.info(f"Initializing Supabase client with URL: {supabase_url}")
-        self.supabase = create_client(supabase_url, service_role_key)
-        
-        # Set headers for admin operations
-        self.supabase.headers = {
-            "apiKey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
-            "Content-Type": "application/json"
-        }
-        
-        # Set storage client headers explicitly
-        self.supabase.storage._client.headers.update({
-            "apiKey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
-            "Content-Type": "application/json"
-        })
-        
-    def create_schools_database(self):
+        self.storage = StorageManager()
+
+    def create_schools_database(self) -> Dict:
         """Creates the main cc.ccschools database in Neo4j"""
         try:
             db_name = "cc.ccschools"
+            
+            # Use driver directly to create database
             with self.driver.session() as session:
-                return self._extracted_from_create_private_database(
-                    session, db_name, f'Created database {db_name}'
-                )
+                # First check if database exists
+                result = session.run("SHOW DATABASES")
+                databases = [record["name"] for record in result]
+                
+                if db_name not in databases:
+                    session.run(f"CREATE DATABASE {db_name}")
+                    self.logger.info(f"Created database {db_name}")
+                    return {
+                        "status": "success",
+                        "message": f"Database {db_name} created successfully"
+                    }
+                else:
+                    self.logger.info(f"Database {db_name} already exists")
+                    return {
+                        "status": "success",
+                        "message": f"Database {db_name} already exists"
+                    }
+                
         except Exception as e:
             self.logger.error(f"Error creating schools database: {str(e)}")
             return {"status": "error", "message": str(e)}
-            
-    def create_school_node(self, school_data):
+
+    def create_school_node(self, school_data: Dict) -> Dict:
         """Creates a school node in cc.ccschools database and stores TLDraw file in Supabase"""
         try:
-            # Convert Supabase school data to SchoolNode using GraphNamingProvider
+            # Convert school data to SchoolNode
             school_unique_id = self.graph_naming.get_school_unique_id(school_data['urn'])
             school_path = self.graph_naming.get_school_path("cc.ccschools", school_data['urn'])
             
@@ -179,68 +175,23 @@ class SchoolManager:
             file_path = f"{school_data['urn']}/tldraw.json"
             file_options = {
                 "content-type": "application/json",
-                "x-upsert": "true",  # Update if exists
+                "x-upsert": "true",
                 "metadata": {
                     "establishment_urn": school_data['urn'],
                     "establishment_name": school_data['establishment_name']
                 }
             }
             
-            try:
-                # Create a fresh service role client for storage operations
-                self.logger.info("Creating fresh service role client for storage operations")
-                service_client = create_client(
-                    os.getenv("SUPABASE_BACKEND_URL"),
-                    os.getenv("SERVICE_ROLE_KEY")
-                )
-                
-                self.logger.debug(f"Service client created with URL: {os.getenv('SUPABASE_BACKEND_URL')}")
-                
-                service_client.headers = {
-                    "apiKey": os.getenv("SERVICE_ROLE_KEY"),
-                    "Authorization": f"Bearer {os.getenv('SERVICE_ROLE_KEY')}",
-                    "Content-Type": "application/json"
-                }
-                service_client.storage._client.headers.update({
-                    "apiKey": os.getenv("SERVICE_ROLE_KEY"),
-                    "Authorization": f"Bearer {os.getenv('SERVICE_ROLE_KEY')}",
-                    "Content-Type": "application/json"
-                })
-                
-                self.logger.debug("Headers set for service client and storage client")
-                
-                # Upload to Supabase storage using service role client
-                self.logger.info(f"Uploading tldraw file for school {school_data['urn']}")
-                self.logger.debug(f"File path: {file_path}")
-                self.logger.debug(f"File options: {file_options}")
-                
-                # First, ensure the bucket exists
-                self.logger.info("Checking if bucket cc.ccschools exists")
-                try:
-                    bucket = service_client.storage.get_bucket("cc.ccschools")
-                    self.logger.info("Bucket cc.ccschools exists")
-                except Exception as bucket_error:
-                    self.logger.error(f"Error checking bucket: {str(bucket_error)}")
-                    if hasattr(bucket_error, 'response'):
-                        self.logger.error(f"Bucket error response: {bucket_error.response.text if hasattr(bucket_error.response, 'text') else bucket_error.response}")
-                    raise bucket_error
-                
-                # Attempt the upload
-                self.logger.info("Attempting file upload")
-                result = service_client.storage.from_("cc.ccschools").upload(
-                    path=file_path,
-                    file=json.dumps(tldraw_data).encode(),
-                    file_options=file_options
-                )
-                self.logger.info(f"Upload successful. Result: {result}")
-                
-            except Exception as upload_error:
-                self.logger.error(f"Error uploading tldraw file: {str(upload_error)}")
-                if hasattr(upload_error, 'response'):
-                    self.logger.error(f"Upload error response: {upload_error.response.text if hasattr(upload_error.response, 'text') else upload_error.response}")
-                raise upload_error
+            # Upload file
+            self.storage.upload_file(
+                bucket_id="cc.ccschools",
+                file_path=file_path,
+                file_data=json.dumps(tldraw_data).encode(),
+                content_type="application/json",
+                upsert=True
+            )
             
-            # Create node in Neo4j using Neontology
+            # Create node in Neo4j
             with self.neontology as neo:
                 self.logger.info(f"Creating school node in Neo4j: {school_node.to_dict()}")
                 neo.create_or_merge_node(school_node, database="cc.ccschools", operation="merge")
@@ -249,29 +200,23 @@ class SchoolManager:
         except Exception as e:
             self.logger.error(f"Error creating school node: {str(e)}")
             return {"status": "error", "message": str(e)}
-            
-    def create_private_database(self, school_data):
+
+    def create_private_database(self, school_data: Dict) -> Dict:
         """Creates a private database for a specific school"""
         try:
             private_db_name = f"cc.ccschools.{school_data['urn']}"
             with self.driver.session() as session:
-                return self._extracted_from_create_private_database(
-                    session, private_db_name, 'Created private database '
-                )
+                session_tools.create_database(session, private_db_name)
+                self.logger.info(f"Created private database {private_db_name}")
+                return {
+                    "status": "success",
+                    "message": f"Database {private_db_name} created successfully"
+                }
         except Exception as e:
             self.logger.error(f"Error creating private database: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    # TODO Rename this here and in `create_schools_database` and `create_private_database`
-    def _extracted_from_create_private_database(self, session, arg1, arg2):
-        session_tools.create_database(session, arg1)
-        self.logger.info(f"{arg2}{arg1}")
-        return {
-            "status": "success",
-            "message": f"Database {arg1} created successfully",
-        }
-
-    def create_basic_structure(self, school_node, database_name):
+    def create_basic_structure(self, school_node: entity_neo.SchoolNode, database_name: str) -> Dict:
         """Creates basic structural nodes in the specified database"""
         try:
             # Create filesystem paths
@@ -340,25 +285,23 @@ class SchoolManager:
             self.logger.error(f"Error creating basic structure: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def create_detailed_structure(self, school_node, database_name, excel_file):
+    def create_detailed_structure(self, school_node: entity_neo.SchoolNode, database_name: str, excel_file: BinaryIO) -> Dict:
         """Creates detailed structural nodes from Excel file"""
         try:
-            # First, store the Excel file in Supabase
+            # Store Excel file in Supabase
             file_path = f"{school_node.urn}/structure.xlsx"
-            file_options = {
-                "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "x-upsert": "true"
-            }
             
-            # Upload Excel file to storage
-            self.supabase.storage.from_("cc.ccschools").upload(
-                path=file_path,
-                file=excel_file,
-                file_options=file_options
+            # Upload Excel file
+            self.storage.upload_file(
+                bucket_id="cc.ccschools",
+                file_path=file_path,
+                file_data=excel_file.read(),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                upsert=True
             )
             
             # Process Excel file
-            dataframes = xl.create_dataframes(excel_file)
+            dataframes = pd.read_excel(excel_file, sheet_name=None)
             
             # Get existing basic structure nodes
             with self.neontology as neo:
@@ -502,7 +445,36 @@ class SchoolManager:
             self.logger.error(f"Error creating detailed structure: {str(e)}")
             return {"status": "error", "message": str(e)}
     
-    def sort_year_groups(self, df):
+    def sort_year_groups(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Helper function to sort year groups numerically"""
         df = df.copy()
         df['YearGroupNumeric'] = pd.to_numeric(df['YearGroup'], errors='coerce')
         return df.sort_values(by='YearGroupNumeric')
+
+    def check_schools_database(self) -> Dict:
+        """Check if the schools database exists and is properly initialized"""
+        try:
+            db_name = "cc.ccschools"
+            
+            # Use driver directly to check database existence
+            with self.driver.session() as session:
+                result = session.run("SHOW DATABASES")
+                databases = [record["name"] for record in result]
+                
+                if db_name in databases:
+                    return {
+                        "status": "success",
+                        "message": f"Database {db_name} exists and is accessible"
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"Database {db_name} does not exist"
+                    }
+                
+        except Exception as e:
+            self.logger.error(f"Error checking schools database: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
