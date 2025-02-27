@@ -2,18 +2,23 @@ import os
 from modules.logger_tool import initialise_logger
 logger = initialise_logger(__name__, os.getenv("LOG_LEVEL"), os.getenv("LOG_PATH"), 'default', True)
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from run.setup import setup_cors
 from run.routers import register_routes
+from run.initialization import initialize_system
+
+try:
+    # Run initialization if needed
+    initialize_system()
+except Exception as e:
+    logger.error(f"Initialization failed: {str(e)}")
+    # Don't fail startup if initialization fails
+    pass
 
 # FastAPI App Setup
 app = FastAPI()
 setup_cors(app)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Register routes
 register_routes(app)

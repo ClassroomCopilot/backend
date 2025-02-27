@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     python3-dev \
+    postgresql-client \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up virtual environment
@@ -26,6 +28,11 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p static templates/admin logs
 
+# Create entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE ${PORT_BACKEND}
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "main.py"]
